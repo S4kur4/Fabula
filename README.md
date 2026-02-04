@@ -92,8 +92,6 @@ docker-compose up -d
 
 Visit `/manage` to login and manage photos, and you can remove or bulk upload your photos.
 
-<video src="https://github.com/user-attachments/assets/7bcfee50-396b-41e0-aef2-dab9e5e684b8" controls width="600"></video>
-
 ## Support Me on Ko-fi
 
 I create this project because I'm passionate about photography. If you'd like to support my work and help me dedicate more time to it, please consider supporting on Ko-fi. Thank you for your generosity!
