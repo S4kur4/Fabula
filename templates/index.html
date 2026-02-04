@@ -9,22 +9,29 @@
             rel="icon"
             href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📷</text></svg>"
         />
+
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Varela:wght@300;400;500;600&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
             rel="stylesheet"
         />
+
         <link
+            href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css"
             rel="stylesheet"
-            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
         />
+
         <link
             rel="stylesheet"
             href="{{ url_for('static', filename='css/styles.css') }}"
         />
+
         <link
             rel="stylesheet"
             href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css"
         />
+
         <!-- Google Analytics -->
         {% if google_analytics_id %}
         <script
@@ -39,8 +46,10 @@
             gtag("js", new Date());
             gtag("config", "{{ google_analytics_id }}");
         </script>
+        {% endif %}
+
         <!-- Umami -->
-        {% endif %} {% if umami_website_id %}
+        {% if umami_website_id %}
         <script
             async
             defer
@@ -51,55 +60,112 @@
     </head>
     <body>
         <header>
-            <div class="logo">📷 {{ tittle }}</div>
-            <nav>
-                <a href="#" class="active" data-section="gallery">Gallery</a>
-                <a href="#" data-section="about">About Me</a>
-                <button id="theme-toggle">
-                    <i class="fas fa-sun"></i>
-                    <i class="fas fa-moon"></i>
-                </button>
-            </nav>
+            <div class="header-inner">
+                <div class="logo">{{ tittle }}</div>
+                <div class="nav-wrapper">
+                    <nav>
+                        <a href="#" data-section="gallery" class="active"
+                            >Gallery</a
+                        >
+                        <a href="#" data-section="about">About</a>
+                        <a href="/manage">Manage</a>
+                    </nav>
+                    <button class="theme-btn" id="theme-toggle">
+                        <i class="ri-moon-line" id="theme-icon"></i>
+                    </button>
+                </div>
+            </div>
         </header>
 
-        <main>
-            <section id="gallery" class="active">
-                <div class="masonry-grid"></div>
-            </section>
-            <section id="about" class="hidden">
-                <h2>About Me</h2>
-                {% for paragraph in about_me %}
-                <p>{{ paragraph }}</p>
-                {% endfor %}
-            </section>
-        </main>
+        <div class="view-wrapper">
+            <main id="view-gallery" class="view-section active-view">
+                <div class="filters-wrapper">
+                    <div class="filters-inner">
+                        <div class="filter-pills" id="album-pills">
+                            <button class="pill active" data-album="all">
+                                All Work
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
-        <div class="social-links">
-            {% for social in social_links %}
-            <a
-                href="{{ social.url }}"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
-                <i class="fab {{ social.icon }}"></i>
-            </a>
-            {% endfor %}
+                <div class="container">
+                    <div class="masonry-grid" id="gallery-grid"></div>
+                </div>
+            </main>
+
+            <main id="view-about" class="view-section">
+                <div class="container">
+                    <div class="about-layout">
+                        <div class="about-intro">
+                            <h1>{{ about_heading }}</h1>
+                            {% for paragraph in about_me %}
+                            <div class="about-text">
+                                <p>{{ paragraph }}</p>
+                            </div>
+                            {% endfor %} {% if about_signature %}
+                            <div class="signature">{{ about_signature }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="about-sidebar">
+                            {% if about_clients %}
+                            <div class="info-group">
+                                <div class="info-label">Clients & Features</div>
+                                <ul class="info-list">
+                                    {% for client in about_clients %}
+                                    <li>
+                                        <span>{{ client.name }}</span>
+                                        <span>{{ client.year }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %} {% if about_gear %}
+                            <div class="info-group">
+                                <div class="info-label">Current Gear</div>
+                                <ul class="info-list">
+                                    {% for gear in about_gear %}
+                                    <li>
+                                        <span>{{ gear.category }}</span>
+                                        <span>{{ gear.item }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %} {% if about_contact %}
+                            <div class="info-group">
+                                <div class="info-label">Connect</div>
+                                <ul class="info-list">
+                                    {% for contact in about_contact %}
+                                    <li>
+                                        <span>{{ contact.platform }}</span>
+                                        <span>{{ contact.handle }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </main>
         </div>
 
-        <footer>
+        <footer class="site-footer">
             <p>
-                © 2025 Designed and Developed by
-                <a style="color: inherit" href="https://ko-fi.com/s4kur4_"
+                © <span id="current-year"></span> Designed and Developed by
+                <a style="color: inherit" href="https://github.com/S4kur4"
                     >s4kur4</a
                 >.
             </p>
         </footer>
 
-        <div id="lightbox" class="hidden">
-            <span class="close">&times;</span>
-            <img id="lightbox-image" src="" alt="Fullsize image" />
-        </div>
-
+        <script>
+            // Set current year in footer
+            document.getElementById("current-year").textContent =
+                new Date().getFullYear();
+        </script>
         <script src="{{ url_for('static', filename='js/script.js') }}"></script>
         <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
     </body>
