@@ -3,131 +3,374 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Login</title>
+        <title>Login - Admin Access</title>
         <link
             rel="icon"
             href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📷</text></svg>"
         />
+
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Varela:wght@300;400;600&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
             rel="stylesheet"
         />
-        <style>
-            :root {
-                --accent-red: #ff4136;
-                --accent-blue: #0056b3;
-            }
-            body {
-                font-family: "Varela", sans-serif;
-                background-color: #000000;
-                margin: 0;
-                padding: 0;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-                color: #ffffff;
-            }
-            .login-container {
-                background-color: rgba(255, 255, 255, 0.1);
-                padding: 40px;
-                border-radius: 10px;
-                width: 300px;
-                backdrop-filter: blur(10px);
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
-            }
-            h1 {
-                text-align: center;
-                color: #ffffff;
-                margin-top: 0;
-                margin-bottom: 30px;
-                font-weight: 500;
-            }
-            form {
-                display: flex;
-                flex-direction: column;
-                width: 100%;
-            }
-            input {
-                margin-bottom: 15px;
-                padding: 10px;
-                letter-spacing: 1px;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 5px;
-                font-family: "Varela", sans-serif;
-                font-size: 18px;
-                background-color: rgba(255, 255, 255, 0.1);
-                color: #ffffff;
-            }
-            input[type="password"] {
-                letter-spacing: 4px;
-            }
-            input::placeholder {
-                letter-spacing: normal;
-                color: rgba(255, 255, 255, 0.5);
-            }
-            input:focus {
-                outline: none;
-                border-color: var(--accent-blue);
-                background-color: rgba(255, 255, 255, 0.2);
-            }
-            button {
-                background-color: var(--accent-blue);
-                color: white;
-                border: none;
-                padding: 12px;
-                border-radius: 5px;
-                cursor: pointer;
-                font-family: "Varela", sans-serif;
-                font-size: 18px;
-                font-weight: 500;
-                transition: background-color 0.3s ease;
-            }
-            button:hover {
-                background-color: #004494;
-            }
-            .error {
-                color: var(--accent-red);
-                text-align: center;
-                margin-bottom: 15px;
-                font-size: 14px;
-            }
-        </style>
+
+        <link
+            href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css"
+            rel="stylesheet"
+        />
+
         <script
             src="https://challenges.cloudflare.com/turnstile/v0/api.js"
             async
             defer
         ></script>
+
+        <style>
+            :root {
+                /* Light Theme - 极简冷调 */
+                --bg-body: #ffffff;
+                --bg-card: #ffffff;
+                --text-main: #111827;
+                --text-secondary: #6b7280;
+                --text-light: #6b7280;
+                --primary-blue: #6366f1;
+                --primary-blue-hover: #4f46e5;
+                --danger-red: #ef4444;
+                --border-color: #f3f4f6;
+                --input-bg: #f3f4f6;
+
+                --font-heading: "Space Grotesk", sans-serif;
+                --font-body: "Plus Jakarta Sans", sans-serif;
+            }
+
+            /* Dark Theme - 深海寂静 */
+            body.dark-mode {
+                --bg-body: #0b0c10;
+                --bg-card: #15171f;
+                --text-main: #f9fafb;
+                --text-secondary: #9ca3af;
+                --text-light: #9ca3af;
+                --primary-blue: #6366f1;
+                --primary-blue-hover: #7c3aed;
+                --danger-red: #f87171;
+                --border-color: #1f2937;
+                --input-bg: #15171f;
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: var(--font-body);
+                background-color: var(--bg-body);
+                color: var(--text-main);
+                line-height: 1.6;
+                -webkit-font-smoothing: antialiased;
+                transition:
+                    background-color 0.3s,
+                    color 0.3s;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                padding: 20px;
+            }
+
+            /* Header styles matching Gallery page */
+            header {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 72px;
+                background: var(--bg-body);
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+            }
+
+            .header-inner {
+                width: 100%;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 0 24px;
+                display: flex;
+                justify-content: flex-end;
+                align-items: center;
+            }
+
+            h1,
+            h2 {
+                font-family: var(--font-heading);
+                letter-spacing: -0.02em;
+            }
+
+            .login-wrapper {
+                width: 100%;
+                max-width: 400px;
+                position: relative;
+            }
+
+            .theme-btn {
+                background: none;
+                border: none;
+                color: var(--text-secondary);
+                padding: 8px;
+                font-size: 20px;
+                cursor: pointer;
+                transition: color 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .theme-btn:hover {
+                color: var(--text-main);
+            }
+
+            .theme-btn .ri-sun-line {
+                display: none;
+            }
+
+            body.dark-mode .theme-btn .ri-sun-line {
+                display: inline-block;
+            }
+
+            body.dark-mode .theme-btn .ri-moon-line {
+                display: none;
+            }
+
+            .login-card {
+                width: 100%;
+                padding: 40px;
+                background: var(--bg-card);
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                text-align: center;
+            }
+
+            .login-card h2 {
+                font-size: 24px;
+                margin-bottom: 24px;
+                color: var(--text-main);
+            }
+
+            .error {
+                color: var(--danger-red);
+                font-size: 14px;
+                margin-bottom: 16px;
+                padding: 12px;
+                background: rgba(239, 68, 68, 0.1);
+                border-radius: 8px;
+            }
+
+            form {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .form-input {
+                width: 100%;
+                padding: 12px;
+                background: var(--input-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                margin-bottom: 16px;
+                color: var(--text-main);
+                outline: none;
+                font-family: var(--font-body);
+                font-size: 14px;
+                transition: border-color 0.2s;
+            }
+
+            .form-input:focus {
+                border-color: var(--primary-blue);
+            }
+
+            .form-input::placeholder {
+                color: var(--text-light);
+            }
+
+            .cf-container {
+                margin: 20px 0;
+                display: flex;
+                justify-content: center;
+            }
+
+            .btn-primary {
+                background: var(--primary-blue);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 14px;
+                width: 100%;
+                border: none;
+                cursor: pointer;
+                transition: background 0.2s;
+                font-family: var(--font-body);
+            }
+
+            .btn-primary:hover {
+                background: var(--primary-blue-hover);
+            }
+
+            .btn-primary:active {
+                transform: scale(0.98);
+            }
+
+            .back-link {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                margin-top: 24px;
+                color: var(--text-secondary);
+                text-decoration: none;
+                font-size: 14px;
+                font-weight: 500;
+                transition: color 0.2s;
+            }
+
+            .back-link:hover {
+                color: var(--text-main);
+            }
+
+            .back-link i {
+                font-size: 16px;
+            }
+
+            @media (max-width: 576px) {
+                .theme-btn {
+                    top: 20px;
+                    right: 20px;
+                }
+
+                .login-card {
+                    padding: 30px 24px;
+                }
+            }
+
+            @media (prefers-color-scheme: dark) {
+                body:not(.light-mode):not(.dark-mode) {
+                    --bg-body: #0b0c10;
+                    --bg-card: #15171f;
+                    --text-main: #f9fafb;
+                    --text-secondary: #9ca3af;
+                    --text-light: #9ca3af;
+                    --primary-blue: #6366f1;
+                    --primary-blue-hover: #7c3aed;
+                    --danger-red: #f87171;
+                    --border-color: #1f2937;
+                    --input-bg: #15171f;
+                }
+            }
+        </style>
     </head>
     <body>
-        <div class="login-container">
-            <h1>Login</h1>
-            <form method="post">
-                {% if error %}
-                <div class="error">{{ error }}</div>
-                {% endif %}
-                <input
-                    type="text"
-                    name="username"
-                    placeholder="Username"
-                    required
-                />
-                <input
-                    type="password"
-                    name="password"
-                    placeholder="Password"
-                    required
-                />
-                <div
-                    class="cf-turnstile"
-                    data-sitekey="{{ turnstile_site_key }}"
-                    style="margin-bottom: 12px"
-                ></div>
-                <button type="submit">LOGIN</button>
-            </form>
+        <header>
+            <div class="header-inner">
+                <button class="theme-btn" id="theme-toggle">
+                    <i class="ri-moon-line" id="theme-icon"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="login-wrapper">
+            <div class="login-card">
+                <h2>Admin Access</h2>
+                <form method="post">
+                    {% if error %}
+                    <div class="error">{{ error }}</div>
+                    {% endif %}
+
+                    <input
+                        type="text"
+                        name="username"
+                        class="form-input"
+                        placeholder="Username"
+                        required
+                        autocomplete="username"
+                    />
+
+                    <input
+                        type="password"
+                        name="password"
+                        class="form-input"
+                        placeholder="Password"
+                        required
+                        autocomplete="current-password"
+                    />
+
+                    {% if turnstile_site_key %}
+                    <div class="cf-container">
+                        <div
+                            class="cf-turnstile"
+                            data-sitekey="{{ turnstile_site_key }}"
+                            data-theme="auto"
+                            id="turnstile-widget"
+                        ></div>
+                    </div>
+                    {% endif %}
+
+                    <button type="submit" class="btn-primary">Sign In</button>
+                </form>
+
+                <a href="/" class="back-link">
+                    <i class="ri-arrow-left-line"></i> Back to Gallery
+                </a>
+            </div>
         </div>
+
+        <script>
+            const themeToggle = document.getElementById("theme-toggle");
+            const themeIcon = document.getElementById("theme-icon");
+
+            // Theme toggle functionality
+            themeToggle.addEventListener("click", () => {
+                document.body.classList.toggle("dark-mode");
+                document.body.classList.toggle("light-mode");
+
+                const isDark = document.body.classList.contains("dark-mode");
+                themeIcon.className = isDark ? "ri-sun-line" : "ri-moon-line";
+                localStorage.setItem("theme", isDark ? "dark" : "light");
+
+                // Update Turnstile theme if present
+                const turnstileWidget =
+                    document.getElementById("turnstile-widget");
+                if (turnstileWidget && window.turnstile) {
+                    turnstile.remove(turnstileWidget);
+                    turnstile.render("#turnstile-widget", {
+                        sitekey: turnstileWidget.getAttribute("data-sitekey"),
+                        theme: isDark ? "dark" : "light",
+                    });
+                }
+            });
+
+            // Load theme preference from localStorage or system preference
+            const savedTheme = localStorage.getItem("theme");
+
+            if (savedTheme === "light") {
+                // Explicitly set light mode to override system preference
+                document.body.classList.add("light-mode");
+                themeIcon.className = "ri-moon-line";
+            } else if (savedTheme === "dark") {
+                document.body.classList.add("dark-mode");
+                themeIcon.className = "ri-sun-line";
+            } else if (
+                window.matchMedia("(prefers-color-scheme: dark)").matches
+            ) {
+                // No saved preference, use system preference
+                document.body.classList.add("dark-mode");
+                themeIcon.className = "ri-sun-line";
+            } else {
+                document.body.classList.add("light-mode");
+                themeIcon.className = "ri-moon-line";
+            }
+        </script>
     </body>
 </html>

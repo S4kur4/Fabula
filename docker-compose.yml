@@ -8,23 +8,29 @@ services:
     volumes:
       - ./static/photos:/app/static/photos
     environment:
+      # Admin credentials
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - FACEBOOK_URL=${FACEBOOK_URL}
-      - INSTAGRAM_URL=${INSTAGRAM_URL}
-      - X_URL=${X_URL}
-      - WEIBO_URL=${WEIBO_URL}
-      - LINKEDIN_URL=${LINKEDIN_URL}
-      - TELEGRAM_URL=${TELEGRAM_URL}
-      - DISCORD_URL=${DISCORD_URL}
-      - BEHANCE_URL=${BEHANCE_URL}
-      - YOUTUBE_URL=${YOUTUBE_URL}
-      - PINTEREST_URL=${PINTEREST_URL}
-      - GITHUB_URL=${GITHUB_URL}
+
+      # Flask secret key
+      - SECRET_KEY=${SECRET_KEY}
+
+      # Website title
       - TITTLE=${TITTLE}
+
+      # About page configuration
+      - ABOUT_HEADING=${ABOUT_HEADING}
       - ABOUT_ME=${ABOUT_ME}
+      - ABOUT_SIGNATURE=${ABOUT_SIGNATURE}
+      - ABOUT_CLIENTS=${ABOUT_CLIENTS}
+      - ABOUT_GEAR=${ABOUT_GEAR}
+      - ABOUT_CONTACT=${ABOUT_CONTACT}
+
+      # Analytics
       - GOOGLE_ANALYTICS_ID=${GOOGLE_ANALYTICS_ID}
       - UMAMI_WEBSITE_ID=${UMAMI_WEBSITE_ID}
+
+      # Security
       - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY}
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
     restart: always

@@ -1,27 +1,80 @@
-const gallery = document.querySelector(".masonry-grid");
+const gallery = document.getElementById("gallery-grid");
 const themeToggle = document.getElementById("theme-toggle");
+const themeIcon = document.getElementById("theme-icon");
 const navLinks = document.querySelectorAll("nav a");
-const sections = document.querySelectorAll("main > section");
+const sections = document.querySelectorAll(".view-section");
+const albumPillsContainer = document.getElementById("album-pills");
 
 let photos = [];
-const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
+let albums = [];
+let currentAlbumId = 0; // 0 = "All Work"
+
+// Initialize
+async function init() {
+  await loadAlbums();
+  await fetchPhotoList();
+}
+
+// Load albums
+async function loadAlbums() {
+  try {
+    const response = await fetch("/api/albums");
+    albums = await response.json();
+    renderAlbumPills();
+  } catch (error) {
+    // Error loading albums
+  }
+}
+
+// Render album filter pills
+function renderAlbumPills() {
+  albumPillsContainer.innerHTML = "";
+
+  albums.forEach((album) => {
+    const pill = document.createElement("button");
+    pill.className = `pill ${currentAlbumId === album.id ? "active" : ""}`;
+    pill.textContent = album.name;
+    pill.onclick = () => filterByAlbum(album.id);
+    albumPillsContainer.appendChild(pill);
+  });
+}
+
+// Filter photos by album
+async function filterByAlbum(albumId) {
+  currentAlbumId = albumId;
+  renderAlbumPills();
+  await fetchPhotoList();
+  window.scrollTo(0, 0);
+}
 
 // Fetch photo list from API
 async function fetchPhotoList() {
   try {
-    const response = await fetch("/api/photo_list");
+    const url =
+      currentAlbumId === 0
+        ? "/api/photo_list"
+        : `/api/photo_list?album_id=${currentAlbumId}`;
+    const response = await fetch(url);
     photos = await response.json();
     loadImages();
   } catch (error) {
-    console.error("Error fetching photo list:", error);
+    // Error fetching photo list
   }
 }
 
 // Function to load images
 function loadImages() {
+  gallery.innerHTML = "";
+
+  if (photos.length === 0) {
+    gallery.innerHTML =
+      '<div style="grid-column: 1/-1; text-align:center; color:var(--text-secondary); padding:40px;">No photos found.</div>';
+    return;
+  }
+
   photos.forEach((photo, index) => {
     const container = document.createElement("div");
-    container.className = "masonry-item";
+    container.className = "gallery-item";
 
     const link = document.createElement("a");
     link.href = `/static/photos/${photo}`;
@@ -51,15 +104,26 @@ function loadImages() {
 // Theme toggle
 themeToggle.addEventListener("click", () => {
   document.body.classList.toggle("dark-mode");
+  const isDark = document.body.classList.contains("dark-mode");
+  themeIcon.className = isDark ? "ri-sun-line" : "ri-moon-line";
+
+  // Save preference
+  localStorage.setItem("theme", isDark ? "dark" : "light");
 });
 
 // Navigation
 navLinks.forEach((link) => {
   link.addEventListener("click", (e) => {
-    e.preventDefault();
     const targetSection = link.getAttribute("data-section");
 
-    // Only update URL hash for "about" section, remove hash for gallery
+    // If link doesn't have data-section attribute, let it navigate normally
+    if (!targetSection) {
+      return; // Allow default behavior (navigation to href)
+    }
+
+    e.preventDefault();
+
+    // Update URL hash
     if (targetSection === "about") {
       window.location.hash = targetSection;
     } else {
@@ -79,12 +143,15 @@ function switchSection(targetSection) {
     .classList.add("active");
 
   sections.forEach((section) => {
-    if (section.id === targetSection) {
-      section.classList.remove("hidden");
+    if (section.id === `view-${targetSection}`) {
+      section.classList.add("active-view");
     } else {
-      section.classList.add("hidden");
+      section.classList.remove("active-view");
     }
   });
+
+  // Scroll to top
+  window.scrollTo(0, 0);
 }
 
 // Handle browser back/forward buttons
@@ -99,15 +166,33 @@ window.addEventListener("load", () => {
   const hash = window.location.hash.substring(1);
   const targetSection = hash === "about" ? "about" : "gallery";
   switchSection(targetSection);
+
+  // Load saved theme preference
+  const savedTheme = localStorage.getItem("theme");
+  if (
+    savedTheme === "dark" ||
+    (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)
+  ) {
+    document.body.classList.add("dark-mode");
+    themeIcon.className = "ri-sun-line";
+  }
+
+  // Save current theme state if not already saved
+  if (!savedTheme) {
+    const isDark = document.body.classList.contains("dark-mode");
+    localStorage.setItem("theme", isDark ? "dark" : "light");
+  }
 });
 
-// Initial load
-fetchPhotoList();
-if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-  document.body.classList.toggle("dark-mode");
-}
+// Listen to system theme changes
 window
   .matchMedia("(prefers-color-scheme: dark)")
   .addEventListener("change", (event) => {
-    document.body.classList.toggle("dark-mode", event.matches);
+    if (!localStorage.getItem("theme")) {
+      document.body.classList.toggle("dark-mode", event.matches);
+      themeIcon.className = event.matches ? "ri-sun-line" : "ri-moon-line";
+    }
   });
+
+// Initial load
+init();

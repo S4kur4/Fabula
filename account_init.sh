@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Function to generate random secret key
+generate_secret_key() {
+    # Generate a 64-character random hex string
+    openssl rand -hex 32
+}
+
 # Function to hash password using SHA256
 hash_password() {
     local password=$1
@@ -51,8 +57,35 @@ check_existing_credentials() {
     fi
 }
 
+# Function to check and generate SECRET_KEY if needed
+check_and_generate_secret_key() {
+    if [ -f .env ]; then
+        secret_key=$(grep "^SECRET_KEY=" .env | cut -d'=' -f2)
+
+        # Check if SECRET_KEY is empty or contains placeholder text
+        if [ -z "$secret_key" ] || [[ "$secret_key" == *"your-secret-key"* ]] || [[ "$secret_key" == *"change-this"* ]]; then
+            echo "Generating new SECRET_KEY..."
+            new_secret_key=$(generate_secret_key)
+            update_env_var "SECRET_KEY" "$new_secret_key"
+            echo "SECRET_KEY has been generated and saved to .env file."
+        else
+            echo "SECRET_KEY already exists in .env file."
+        fi
+    else
+        echo "Generating SECRET_KEY..."
+        new_secret_key=$(generate_secret_key)
+        update_env_var "SECRET_KEY" "$new_secret_key"
+        echo "SECRET_KEY has been generated and saved to .env file."
+    fi
+}
+
 # Main script
-echo "This script will help you initialize the password for the admin account used to manage the photos in Secondgallery."
+echo "This script will help you initialize the password for the admin account used to manage the photos in Fabula."
+echo ""
+
+# Check and generate SECRET_KEY
+check_and_generate_secret_key
+echo ""
 
 # Check existing credentials
 check_existing_credentials

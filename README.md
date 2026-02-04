@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📷 Secondgallery
+# 📷 Fabula
 
 A clean, lightweight, self-hosted photo gallery designed for tech-savvy photographers and photography enthusiasts, built with Flask.
 
@@ -19,7 +19,7 @@ A clean, lightweight, self-hosted photo gallery designed for tech-savvy photogra
 1. Clone the repo
 
 ```sh
- git clone https://github.com/S4kur4/secondgallery.git
+ git clone https://github.com/S4kur4/fabula.git
 ```
 
 2. Create username and password for managing photos
@@ -29,20 +29,6 @@ A clean, lightweight, self-hosted photo gallery designed for tech-savvy photogra
 ```
 3. Modify `.env` to add your personal configuration
 
-```
-# (Optional) Your social media links
-FACEBOOK_URL=https://facebook.com
-INSTAGRAM_URL=http://instagram.com
-X_URL=http://x.com
-WEIBO_URL=
-LINKEDIN_URL=
-TELEGRAM_URL=
-DISCORD_URL=
-BEHANCE_URL=https://www.behance.net
-YOUTUBE_URL=https://youtube.com
-PINTEREST_URL=
-GITHUB_URL=
-```
 ```
 # (Optional) Google Analytics ID or Umami ID
 GOOGLE_ANALYTICS_ID=
@@ -55,12 +41,37 @@ TURNSTILE_SECRET_KEY=
 ```
 ```
 # Website title and your personal information
-# An string list is used in ABOUT_ME to control paragraphs, one value represents one paragraph
 TITTLE='Vivian Kent Photography'
+
+# About page - Main heading (can be different from title)
+ABOUT_HEADING='Capturing the intersection of digital chaos and natural order.'
+
+# About page - Introduction paragraphs (JSON array format)
 ABOUT_ME='[
-"👋 Hey! Thanks for viewing my photographries!",
-"My name is Vivian Kent and I am a photographer living in Sydney, Australia. I specialize in humanistic photography and film style.",
-"Feel free to contact me by clicking on the link at the bottom of the page."
+"Hello. I am Vivian Kent, a photographer living in Sydney, Australia.",
+"I specialize in minimalist architectural photography and street portraits."
+]'
+
+# About page - Signature text (displayed at bottom of intro)
+ABOUT_SIGNATURE='Vivian Kent'
+
+# About page - Clients & Features (JSON array format)
+ABOUT_CLIENTS='[
+{"name": "Unsplash Editorial", "year": "2024"},
+{"name": "Minimalissimo", "year": "2023"}
+]'
+
+# About page - Current Gear (JSON array format)
+ABOUT_GEAR='[
+{"category": "Main Body", "item": "Sony A7R V"},
+{"category": "Daily Lens", "item": "35mm f/1.4 GM"}
+]'
+
+# About page - Contact information (JSON array format)
+ABOUT_CONTACT='[
+{"platform": "Twitter / X", "handle": "@vivian_photo"},
+{"platform": "Instagram", "handle": "@vivian.raw"},
+{"platform": "Email", "handle": "hello@viviankent.com"}
 ]'
 ```
 ```
