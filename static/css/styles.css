@@ -261,17 +261,20 @@ nav a.active::after {
 
 /* --- GALLERY GRID --- */
 .masonry-grid {
-    column-count: 3;
-    column-gap: 24px;
-    column-fill: balance;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-auto-rows: 8px;
+    gap: 24px;
 }
 
 .gallery-item {
-    break-inside: avoid;
-    margin-bottom: 24px;
     position: relative;
-    display: inline-block;
     width: 100%;
+    opacity: 0;
+    transform: translateY(10px);
+    transition:
+        opacity 0.4s ease,
+        transform 0.4s ease;
 }
 
 .gallery-item img {
@@ -279,6 +282,11 @@ nav a.active::after {
     border-radius: 8px;
     display: block;
     vertical-align: top;
+}
+
+.gallery-item.is-visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 /* --- ABOUT --- */
@@ -382,7 +390,7 @@ nav a.active::after {
 /* --- Responsive design --- */
 @media (max-width: 768px) {
     .masonry-grid {
-        column-count: 2;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     }
 
     .about-layout {
@@ -401,7 +409,7 @@ nav a.active::after {
 
 @media (max-width: 576px) {
     .masonry-grid {
-        column-count: 1;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     }
 
     .logo {

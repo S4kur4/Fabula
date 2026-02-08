@@ -13,6 +13,8 @@ let hasMore = true;
 let isLoading = false;
 let loadedCount = 0;
 let pendingReset = false;
+let resizeTimeout = null;
+let revealObserver = null;
 
 const PAGE_SIZE = 24;
 const sentinel = document.createElement("div");
@@ -21,6 +23,7 @@ sentinel.id = "gallery-sentinel";
 // Initialize
 async function init() {
   await loadAlbums();
+  setupRevealObserver();
   setupInfiniteScroll();
   await fetchPhotoList(true);
 }
@@ -126,10 +129,17 @@ function appendImages(items) {
     img.setAttribute("loading", "lazy");
     loadedCount += 1;
     img.alt = `Photo ${loadedCount}`;
+    img.addEventListener("load", () => {
+      resizeMasonryItem(container);
+    });
 
     link.appendChild(img);
     container.appendChild(link);
     gallery.appendChild(container);
+
+    if (revealObserver) {
+      revealObserver.observe(container);
+    }
   });
 
   // Initialize Fancybox
@@ -140,6 +150,39 @@ function appendImages(items) {
       },
     },
   });
+
+  // Recalculate layout for newly added items
+  requestAnimationFrame(() => {
+    items.forEach((_, idx) => {
+      const item = gallery.children[gallery.children.length - items.length + idx];
+      if (item) resizeMasonryItem(item);
+    });
+  });
+}
+
+function setupRevealObserver() {
+  revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    },
+    { rootMargin: "80px", threshold: 0.1 }
+  );
+}
+
+function resizeMasonryItem(item) {
+  const img = item.querySelector("img");
+  if (!img || !img.complete) return;
+  const styles = window.getComputedStyle(gallery);
+  const rowGap = parseFloat(styles.getPropertyValue("row-gap")) || 0;
+  const rowHeight = parseFloat(styles.getPropertyValue("grid-auto-rows")) || 1;
+  const itemHeight = img.getBoundingClientRect().height + rowGap;
+  const rowSpan = Math.ceil(itemHeight / (rowHeight + rowGap));
+  item.style.gridRowEnd = `span ${rowSpan}`;
 }
 
 // Theme toggle
@@ -237,6 +280,14 @@ window
 
 // Initial load
 init();
+
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => {
+    const items = Array.from(gallery.children);
+    items.forEach((item) => resizeMasonryItem(item));
+  }, 100);
+});
 
 // Infinite scroll observer
 function setupInfiniteScroll() {
