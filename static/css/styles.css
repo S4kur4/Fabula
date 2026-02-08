@@ -262,7 +262,7 @@ nav a.active::after {
 /* --- GALLERY GRID --- */
 .masonry-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-auto-rows: 8px;
     gap: 24px;
 }
