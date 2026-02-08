@@ -51,6 +51,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupFileUpload();
 });
 
+function getCsrfToken() {
+  return window.CSRF_TOKEN || "";
+}
+
+function fetchWithCsrf(url, options = {}) {
+  const headers = options.headers || {};
+  headers["X-CSRF-Token"] = getCsrfToken();
+  return fetch(url, { ...options, headers });
+}
+
 // Album Management
 async function loadAlbums() {
   try {
@@ -140,7 +150,7 @@ async function createNewAlbum() {
   if (!name) return;
 
   try {
-    const response = await fetch("/api/albums", {
+    const response = await fetchWithCsrf("/api/albums", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -164,7 +174,7 @@ async function renameAlbum(albumId) {
   if (!newName || newName === album.name) return;
 
   try {
-    const response = await fetch(`/api/albums/${albumId}`, {
+    const response = await fetchWithCsrf(`/api/albums/${albumId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName }),
@@ -189,7 +199,7 @@ async function deleteAlbum(albumId) {
   const albumName = albums.find((a) => a.id === albumId)?.name || albumId;
 
   try {
-    const response = await fetch(`/api/albums/${albumId}`, {
+    const response = await fetchWithCsrf(`/api/albums/${albumId}`, {
       method: "DELETE",
     });
 
@@ -324,7 +334,7 @@ function renderPhotos(items) {
 
 async function updatePhotoAlbum(filename, albumId) {
   try {
-    const response = await fetch(`/api/photos/${filename}/album`, {
+    const response = await fetchWithCsrf(`/api/photos/${filename}/album`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ album_id: albumId || null }),
@@ -347,7 +357,7 @@ async function deletePhoto(filename) {
   try {
     restoreScrollY = window.scrollY;
     locallyDeleted.add(filename);
-    const response = await fetch("/api/delete_photo", {
+    const response = await fetchWithCsrf("/api/delete_photo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename }),
@@ -435,7 +445,7 @@ async function uploadPhoto(file) {
     formData.append("album_id", uploadAlbumId);
   }
 
-  const response = await fetch("/api/upload_photo", {
+  const response = await fetchWithCsrf("/api/upload_photo", {
     method: "POST",
     body: formData,
   });
@@ -780,7 +790,7 @@ async function saveAbout() {
   };
 
   try {
-    const response = await fetch("/api/about", {
+    const response = await fetchWithCsrf("/api/about", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -804,7 +814,7 @@ async function deleteSelected() {
   try {
     restoreScrollY = window.scrollY;
     filenames.forEach((name) => locallyDeleted.add(name));
-    const response = await fetch("/api/delete_photos", {
+    const response = await fetchWithCsrf("/api/delete_photos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filenames }),

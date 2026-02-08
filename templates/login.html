@@ -284,6 +284,7 @@
             <div class="login-card">
                 <h2>Admin Access</h2>
                 <form method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                     {% if error %}
                     <div class="error">{{ error }}</div>
                     {% endif %}

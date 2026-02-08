@@ -154,6 +154,9 @@
             <div class="action-island-inner" id="action-island-inner"></div>
         </div>
 
+        <script>
+            window.CSRF_TOKEN = "{{ csrf_token }}";
+        </script>
         <script src="{{ url_for('static', filename='js/manage.js') }}"></script>
     </body>
 </html>

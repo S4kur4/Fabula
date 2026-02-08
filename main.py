@@ -9,6 +9,9 @@ import requests
 import glob
 import queue
 import threading
+import re
+import hmac
+import time
 from functools import wraps
 from PIL import Image, ImageOps
 from datetime import datetime
@@ -24,6 +27,10 @@ app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(16))
 
 app.config['PHOTO_FOLDER'] = os.path.join(app.static_folder, 'photos')
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_UPLOAD_MB', '20')) * 1024 * 1024
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
 
 # Ensure folders exist
 os.makedirs(app.config['PHOTO_FOLDER'], exist_ok=True)
@@ -53,14 +60,78 @@ USERNAME = os.environ.get('ADMIN_USERNAME')
 PASSWORD = os.environ.get('ADMIN_PASSWORD')
 TURNSTILE_SITE_KEY = os.environ.get('TURNSTILE_SITE_KEY')
 TURNSTILE_SECRET_KEY = os.environ.get('TURNSTILE_SECRET_KEY')
+FILENAME_PATTERN = re.compile(r"^[a-f0-9-]{36}\.webp$")
+ALLOWED_MIME_TYPES = {'image/png', 'image/jpeg'}
+
+LOGIN_MAX_ATTEMPTS = int(os.environ.get('LOGIN_MAX_ATTEMPTS', '5'))
+LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '900'))
+login_attempts = {}
+
+def get_client_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+def is_rate_limited(ip):
+    now = time.time()
+    attempts = [ts for ts in login_attempts.get(ip, []) if now - ts < LOGIN_WINDOW_SECONDS]
+    login_attempts[ip] = attempts
+    return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+def record_failed_login(ip):
+    now = time.time()
+    attempts = login_attempts.get(ip, [])
+    attempts.append(now)
+    login_attempts[ip] = attempts
+
+def clear_login_attempts(ip):
+    login_attempts.pop(ip, None)
+
+def get_csrf_token():
+    token = session.get('csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['csrf_token'] = token
+    return token
+
+def validate_csrf_token():
+    token = None
+    if request.form:
+        token = request.form.get('csrf_token')
+    if not token:
+        token = request.headers.get('X-CSRF-Token')
+    return token and hmac.compare_digest(token, session.get('csrf_token', ''))
+
+def csrf_protect(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.method in ('POST', 'PUT', 'DELETE'):
+            if not validate_csrf_token():
+                return jsonify({'success': False, 'message': 'Invalid CSRF token'}), 400
+        return f(*args, **kwargs)
+    return wrapper
+
+@app.context_processor
+def inject_csrf_token():
+    return {'csrf_token': get_csrf_token()}
 
 def verify_turnstile(token):
+     if not TURNSTILE_SECRET_KEY:
+         return False
      data = {
          "secret": TURNSTILE_SECRET_KEY,
          "response": token
      }
-     response = requests.post("https://challenges.cloudflare.com/turnstile/v0/siteverify", data=data)
-     return response.json()["success"]
+     try:
+         response = requests.post(
+             "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+             data=data,
+             timeout=5
+         )
+         return response.json().get("success", False)
+     except Exception:
+         return False
 
 
 def login_required(f):
@@ -178,7 +249,16 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    ip = get_client_ip()
     if request.method == 'POST':
+        if is_rate_limited(ip):
+            return render_template('login.html',
+                                error='Too many attempts. Please try again later.',
+                                turnstile_site_key=TURNSTILE_SITE_KEY)
+        if not validate_csrf_token():
+            return render_template('login.html',
+                                error='Invalid session token',
+                                turnstile_site_key=TURNSTILE_SITE_KEY)
         if TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY:
             turnstile_response = request.form.get('cf-turnstile-response')
             if not turnstile_response:
@@ -192,10 +272,15 @@ def login():
                                     turnstile_site_key=TURNSTILE_SITE_KEY)
 
         if (request.form['username'] == USERNAME and
-            hashlib.sha256(request.form['password'].encode()).hexdigest() == PASSWORD):
+            hmac.compare_digest(
+                hashlib.sha256(request.form['password'].encode()).hexdigest(),
+                PASSWORD or ''
+            )):
+            clear_login_attempts(ip)
             session['logged_in'] = True
             return redirect(url_for('manage'))
         else:
+            record_failed_login(ip)
             return render_template('login.html',
                                 error='Invalid credentials',
                                 turnstile_site_key=TURNSTILE_SITE_KEY)
@@ -271,6 +356,7 @@ def get_about():
 
 @app.route('/api/about', methods=['PUT'])
 @login_required
+@csrf_protect
 def update_about():
     data = request.json or {}
     payload = {
@@ -311,6 +397,7 @@ def events():
 
 @app.route('/api/albums', methods=['POST'])
 @login_required
+@csrf_protect
 def create_album():
     """Create a new album"""
     name = request.json.get('name')
@@ -326,6 +413,7 @@ def create_album():
 
 @app.route('/api/albums/<int:album_id>', methods=['PUT'])
 @login_required
+@csrf_protect
 def update_album(album_id):
     """Update album name"""
     name = request.json.get('name')
@@ -340,6 +428,7 @@ def update_album(album_id):
 
 @app.route('/api/albums/<int:album_id>', methods=['DELETE'])
 @login_required
+@csrf_protect
 def delete_album(album_id):
     """Delete an album"""
     if db.delete_album(album_id):
@@ -356,9 +445,12 @@ def serve_photo(filename):
 
 @app.route('/api/delete_photo', methods=['POST'])
 @login_required
+@csrf_protect
 def delete_photo():
     filename = request.json.get('filename')
     if filename:
+        if not is_valid_photo_filename(filename) or not db.photo_exists(filename):
+            return jsonify({'success': False, 'message': 'Invalid filename'}), 400
         deleted = delete_photo_files(filename)
         if deleted:
             # Remove from database
@@ -370,6 +462,7 @@ def delete_photo():
 
 @app.route('/api/delete_photos', methods=['POST'])
 @login_required
+@csrf_protect
 def delete_photos():
     data = request.json or {}
     filenames = data.get('filenames', [])
@@ -379,6 +472,8 @@ def delete_photos():
     deleted_any = False
     for filename in filenames:
         if not isinstance(filename, str):
+            continue
+        if not is_valid_photo_filename(filename) or not db.photo_exists(filename):
             continue
         deleted = delete_photo_files(filename)
         if deleted:
@@ -393,8 +488,11 @@ def delete_photos():
 
 @app.route('/api/photos/<filename>/album', methods=['PUT'])
 @login_required
+@csrf_protect
 def update_photo_album(filename):
     """Update photo's album"""
+    if not is_valid_photo_filename(filename) or not db.photo_exists(filename):
+        return jsonify({'success': False, 'message': 'Invalid filename'}), 400
     album_id = request.json.get('album_id')
     if album_id is not None:
         db.update_photo_album(filename, album_id if album_id != '' else None)
@@ -404,6 +502,7 @@ def update_photo_album(filename):
 
 @app.route('/api/upload_photo', methods=['POST'])
 @login_required
+@csrf_protect
 def upload_photo():
     if 'photo' not in request.files:
         return jsonify({'success': False, 'message': 'No file part'}), 400
@@ -411,6 +510,8 @@ def upload_photo():
     if file.filename == '':
         return jsonify({'success': False, 'message': 'No selected file'}), 400
     if file and allowed_file(file.filename):
+        if file.mimetype not in ALLOWED_MIME_TYPES:
+            return jsonify({'success': False, 'message': 'Invalid file type'}), 400
         file_ext = file.filename.rsplit('.', 1)[1].lower()
         filename = str(uuid.uuid4()) + '.webp'
         temp_filename = filename.replace('.webp', f'.{file_ext}')
@@ -418,6 +519,9 @@ def upload_photo():
 
         # Save original upload to temp path
         file.save(temp_path)
+        if not is_valid_image_file(temp_path):
+            os.remove(temp_path)
+            return jsonify({'success': False, 'message': 'Invalid image file'}), 400
 
         # Add to database with processing status
         album_id = request.form.get('album_id', type=int)
@@ -434,6 +538,19 @@ def upload_photo():
 def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def is_valid_photo_filename(filename):
+    return bool(FILENAME_PATTERN.match(filename))
+
+
+def is_valid_image_file(path):
+    try:
+        with Image.open(path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
 
 
 def delete_photo_files(filename):
