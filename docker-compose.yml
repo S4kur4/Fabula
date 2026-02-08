@@ -5,6 +5,8 @@ services:
       - "127.0.0.1:5001:5000"
     volumes:
       - ./static/photos:/app/static/photos
+      - ./data:/app/data
+      - ./uploads:/app/uploads
     environment:
       # Admin credentials
       - ADMIN_USERNAME=${ADMIN_USERNAME}

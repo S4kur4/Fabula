@@ -1,10 +1,11 @@
 import sqlite3
 import os
 
-DATABASE_PATH = 'gallery.db'
+DATABASE_PATH = os.environ.get('DATABASE_PATH', os.path.join('data', 'gallery.db'))
 
 def init_db():
     """Initialize the database with required tables"""
+    os.makedirs(os.path.dirname(DATABASE_PATH) or '.', exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
@@ -273,3 +274,9 @@ def get_album_photo_count(album_id):
         count = conn.execute('SELECT COUNT(*) FROM photos WHERE album_id = ?', (album_id,)).fetchone()[0]
     conn.close()
     return count
+
+def photo_exists(filename):
+    conn = get_db_connection()
+    row = conn.execute('SELECT 1 FROM photos WHERE filename = ? LIMIT 1', (filename,)).fetchone()
+    conn.close()
+    return row is not None
