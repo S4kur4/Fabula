@@ -180,7 +180,7 @@ function resizeMasonryItem(item) {
   const styles = window.getComputedStyle(gallery);
   const rowGap = parseFloat(styles.getPropertyValue("row-gap")) || 0;
   const rowHeight = parseFloat(styles.getPropertyValue("grid-auto-rows")) || 1;
-  const itemHeight = img.getBoundingClientRect().height + rowGap;
+  const itemHeight = item.getBoundingClientRect().height + rowGap;
   const rowSpan = Math.ceil(itemHeight / (rowHeight + rowGap));
   item.style.gridRowEnd = `span ${rowSpan}`;
 }
