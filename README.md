@@ -40,39 +40,8 @@ TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 ```
 ```
-# Website title and your personal information
+# Website title
 TITTLE='Vivian Kent Photography'
-
-# About page - Main heading (can be different from title)
-ABOUT_HEADING='Capturing the intersection of digital chaos and natural order.'
-
-# About page - Introduction paragraphs (JSON array format)
-ABOUT_ME='[
-"Hello. I am Vivian Kent, a photographer living in Sydney, Australia.",
-"I specialize in minimalist architectural photography and street portraits."
-]'
-
-# About page - Signature text (displayed at bottom of intro)
-ABOUT_SIGNATURE='Vivian Kent'
-
-# About page - Clients & Features (JSON array format)
-ABOUT_CLIENTS='[
-{"name": "Unsplash Editorial", "year": "2024"},
-{"name": "Minimalissimo", "year": "2023"}
-]'
-
-# About page - Current Gear (JSON array format)
-ABOUT_GEAR='[
-{"category": "Main Body", "item": "Sony A7R V"},
-{"category": "Daily Lens", "item": "35mm f/1.4 GM"}
-]'
-
-# About page - Contact information (JSON array format)
-ABOUT_CONTACT='[
-{"platform": "Twitter / X", "handle": "@vivian_photo"},
-{"platform": "Instagram", "handle": "@vivian.raw"},
-{"platform": "Email", "handle": "hello@viviankent.com"}
-]'
 ```
 ```
 # You can set the username and password directly here
@@ -91,6 +60,17 @@ docker-compose up -d
 ### Photo Management
 
 Visit `/manage` to login and manage photos, and you can remove or bulk upload your photos.
+
+### About Page Management
+
+The About page content is now managed in the admin UI:
+
+1. Go to `/manage`
+2. Switch to the **About** tab
+3. Edit Heading / About Me / Signature / Gear / Contact
+4. Click **Save About**
+
+About content is stored in the SQLite database (`gallery.db`).
 
 ## Support Me on Ko-fi
 
