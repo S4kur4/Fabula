@@ -1,5 +1,3 @@
-version: "3.3"
-
 services:
   web:
     build: .
@@ -17,14 +15,6 @@ services:
 
       # Website title
       - TITTLE=${TITTLE}
-
-      # About page configuration
-      - ABOUT_HEADING=${ABOUT_HEADING}
-      - ABOUT_ME=${ABOUT_ME}
-      - ABOUT_SIGNATURE=${ABOUT_SIGNATURE}
-      - ABOUT_CLIENTS=${ABOUT_CLIENTS}
-      - ABOUT_GEAR=${ABOUT_GEAR}
-      - ABOUT_CONTACT=${ABOUT_CONTACT}
 
       # Analytics
       - GOOGLE_ANALYTICS_ID=${GOOGLE_ANALYTICS_ID}

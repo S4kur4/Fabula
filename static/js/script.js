@@ -8,11 +8,21 @@ const albumPillsContainer = document.getElementById("album-pills");
 let photos = [];
 let albums = [];
 let currentAlbumId = 0; // 0 = "All Work"
+let nextOffset = 0;
+let hasMore = true;
+let isLoading = false;
+let loadedCount = 0;
+let pendingReset = false;
+
+const PAGE_SIZE = 24;
+const sentinel = document.createElement("div");
+sentinel.id = "gallery-sentinel";
 
 // Initialize
 async function init() {
   await loadAlbums();
-  await fetchPhotoList();
+  setupInfiniteScroll();
+  await fetchPhotoList(true);
 }
 
 // Load albums
@@ -43,36 +53,66 @@ function renderAlbumPills() {
 async function filterByAlbum(albumId) {
   currentAlbumId = albumId;
   renderAlbumPills();
-  await fetchPhotoList();
+  await fetchPhotoList(true);
   window.scrollTo(0, 0);
 }
 
-// Fetch photo list from API
-async function fetchPhotoList() {
+function resetGallery() {
+  gallery.innerHTML = "";
+  photos = [];
+  nextOffset = 0;
+  hasMore = true;
+  loadedCount = 0;
+}
+
+// Fetch photo list from API (paged)
+async function fetchPhotoList(reset = false) {
+  if (isLoading) {
+    if (reset) pendingReset = true;
+    return;
+  }
+  if (reset) {
+    resetGallery();
+  } else if (!hasMore) {
+    return;
+  }
+  isLoading = true;
+
   try {
-    const url =
-      currentAlbumId === 0
-        ? "/api/photo_list"
-        : `/api/photo_list?album_id=${currentAlbumId}`;
+    const params = new URLSearchParams({
+      limit: PAGE_SIZE,
+      offset: nextOffset,
+    });
+    if (currentAlbumId !== 0) {
+      params.append("album_id", currentAlbumId);
+    }
+    const url = `/api/photo_list?${params.toString()}`;
     const response = await fetch(url);
-    photos = await response.json();
-    loadImages();
+    const data = await response.json();
+    const items = data.items || [];
+    photos = photos.concat(items);
+    appendImages(items);
+    nextOffset = data.next_offset;
+    hasMore = nextOffset !== null;
   } catch (error) {
     // Error fetching photo list
+  } finally {
+    isLoading = false;
+    if (pendingReset) {
+      pendingReset = false;
+      fetchPhotoList(true);
+    }
   }
 }
 
-// Function to load images
-function loadImages() {
-  gallery.innerHTML = "";
-
-  if (photos.length === 0) {
+function appendImages(items) {
+  if (items.length === 0 && photos.length === 0) {
     gallery.innerHTML =
       '<div style="grid-column: 1/-1; text-align:center; color:var(--text-secondary); padding:40px;">No photos found.</div>';
     return;
   }
 
-  photos.forEach((photo, index) => {
+  items.forEach((photo) => {
     const container = document.createElement("div");
     container.className = "gallery-item";
 
@@ -84,7 +124,8 @@ function loadImages() {
     const src = `/static/photos/${photo}`;
     img.src = src.replace(".webp", "-thumbnail.webp");
     img.setAttribute("loading", "lazy");
-    img.alt = `Photo ${index + 1}`;
+    loadedCount += 1;
+    img.alt = `Photo ${loadedCount}`;
 
     link.appendChild(img);
     container.appendChild(link);
@@ -196,3 +237,23 @@ window
 
 // Initial load
 init();
+
+// Infinite scroll observer
+function setupInfiniteScroll() {
+  if (!sentinel.isConnected) {
+    gallery.parentElement.appendChild(sentinel);
+  }
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          fetchPhotoList();
+        }
+      });
+    },
+    { rootMargin: "200px" }
+  );
+
+  observer.observe(sentinel);
+}

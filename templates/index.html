@@ -99,29 +99,19 @@
                     <div class="about-layout">
                         <div class="about-intro">
                             <h1>{{ about_heading }}</h1>
-                            {% for paragraph in about_me %}
+                            {% for paragraph in about_me.splitlines() %}
+                            {% if paragraph.strip() %}
                             <div class="about-text">
                                 <p>{{ paragraph }}</p>
                             </div>
+                            {% endif %}
                             {% endfor %} {% if about_signature %}
                             <div class="signature">{{ about_signature }}</div>
                             {% endif %}
                         </div>
 
                         <div class="about-sidebar">
-                            {% if about_clients %}
-                            <div class="info-group">
-                                <div class="info-label">Clients & Features</div>
-                                <ul class="info-list">
-                                    {% for client in about_clients %}
-                                    <li>
-                                        <span>{{ client.name }}</span>
-                                        <span>{{ client.year }}</span>
-                                    </li>
-                                    {% endfor %}
-                                </ul>
-                            </div>
-                            {% endif %} {% if about_gear %}
+                            {% if about_gear %}
                             <div class="info-group">
                                 <div class="info-label">Current Gear</div>
                                 <ul class="info-list">

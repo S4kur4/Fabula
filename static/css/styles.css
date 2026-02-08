@@ -1,44 +1,44 @@
 :root {
-    /* Light Theme - 极简冷调 */
-    --bg-body: #ffffff;
+    /* Light Theme - Apple-like */
+    --bg-body: #f5f5f7;
     --bg-card: #ffffff;
-    --text-main: #111827;
-    --text-secondary: #6b7280;
-    --text-light: #6b7280;
-    --primary-blue: #6366f1;
-    --primary-blue-hover: #4f46e5;
-    --danger-red: #ef4444;
-    --border-color: #f3f4f6;
-    --input-bg: #f3f4f6;
-    --pill-bg-hover: #f3f4f6;
+    --text-main: #1d1d1f;
+    --text-secondary: #6e6e73;
+    --text-light: #8e8e93;
+    --primary-blue: #007aff;
+    --primary-blue-hover: #0062cc;
+    --danger-red: #ff3b30;
+    --border-color: #e5e5ea;
+    --input-bg: #f2f2f7;
+    --pill-bg-hover: #f2f2f7;
 
     --font-heading: "Space Grotesk", sans-serif;
     --font-body: "Plus Jakarta Sans", sans-serif;
 
     --shadow-card:
-        0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-    --shadow-float: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        0 6px 18px rgba(15, 23, 42, 0.08);
+    --shadow-float: 0 20px 40px rgba(15, 23, 42, 0.12);
 
     --header-height: 72px;
     --filter-height: 64px;
 }
 
-/* Dark Theme - 深海寂静 */
+/* Dark Theme - Apple-like */
 body.dark-mode {
-    --bg-body: #0b0c10;
-    --bg-card: #15171f;
-    --text-main: #f9fafb;
-    --text-secondary: #9ca3af;
-    --text-light: #9ca3af;
-    --primary-blue: #6366f1;
-    --primary-blue-hover: #7c3aed;
-    --danger-red: #f87171;
-    --border-color: #1f2937;
-    --input-bg: #15171f;
-    --pill-bg-hover: #1f2937;
+    --bg-body: #0b0b0f;
+    --bg-card: #1c1c1e;
+    --text-main: #f2f2f7;
+    --text-secondary: #8e8e93;
+    --text-light: #636366;
+    --primary-blue: #0a84ff;
+    --primary-blue-hover: #3b8cff;
+    --danger-red: #ff453a;
+    --border-color: #2c2c2e;
+    --input-bg: #1c1c1e;
+    --pill-bg-hover: #2c2c2e;
 
-    --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-    --shadow-float: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 10px 24px rgba(0, 0, 0, 0.45);
+    --shadow-float: 0 30px 60px rgba(0, 0, 0, 0.55);
 }
 
 * {

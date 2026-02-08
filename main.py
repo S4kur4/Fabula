@@ -6,12 +6,16 @@ import secrets
 import io
 import hashlib
 import requests
+import glob
+import queue
+import threading
 from functools import wraps
-from PIL import Image
+from PIL import Image, ImageOps
 from datetime import datetime
 from urllib.parse import urljoin
 from flask import make_response
-from flask import Flask, render_template, jsonify, send_from_directory, request, redirect, url_for, session
+from flask import Flask, render_template, jsonify, send_from_directory, request, redirect, url_for, session, Response, stream_with_context
+from concurrent.futures import ThreadPoolExecutor
 import database as db
 
 app = Flask(__name__)
@@ -19,6 +23,28 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(16))
 
 app.config['PHOTO_FOLDER'] = os.path.join(app.static_folder, 'photos')
+app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
+
+# Ensure folders exist
+os.makedirs(app.config['PHOTO_FOLDER'], exist_ok=True)
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Background image processing
+executor = ThreadPoolExecutor(max_workers=2)
+
+# SSE subscribers
+sse_subscribers = []
+sse_lock = threading.Lock()
+
+
+def sse_publish(event, data):
+    payload = f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    with sse_lock:
+        for q in list(sse_subscribers):
+            try:
+                q.put_nowait(payload)
+            except Exception:
+                pass
 
 # Initialize database
 db.init_db()
@@ -107,6 +133,29 @@ Sitemap: {base_url}/sitemap.xml
     return response
 
 
+def get_about_data():
+    defaults = {
+        "heading": "",
+        "me": "",
+        "signature": "",
+        "gear": "[]",
+        "contact": "[]",
+    }
+
+    stored = db.get_setting("about")
+    if not stored:
+        data = defaults
+    else:
+        try:
+            data = json.loads(stored)
+        except Exception:
+            data = defaults
+
+    data["gear"] = json.loads(data.get("gear", "[]")) if isinstance(data.get("gear"), str) else data.get("gear", [])
+    data["contact"] = json.loads(data.get("contact", "[]")) if isinstance(data.get("contact"), str) else data.get("contact", [])
+    return data
+
+
 @app.route('/')
 def index():
     # Basic info
@@ -114,24 +163,15 @@ def index():
     google_analytics_id = os.environ.get('GOOGLE_ANALYTICS_ID')
     umami_website_id = os.environ.get('UMAMI_WEBSITE_ID')
 
-    # About page data
-    about_heading = os.environ.get('ABOUT_HEADING', tittle)
-    about_me = json.loads(os.environ.get('ABOUT_ME', '[]'))
-    about_signature = os.environ.get('ABOUT_SIGNATURE', '')
-
-    # Parse JSON arrays for about page sections
-    about_clients = json.loads(os.environ.get('ABOUT_CLIENTS', '[]'))
-    about_gear = json.loads(os.environ.get('ABOUT_GEAR', '[]'))
-    about_contact = json.loads(os.environ.get('ABOUT_CONTACT', '[]'))
+    about = get_about_data()
 
     return render_template('index.html',
                          tittle=tittle,
-                         about_me=about_me,
-                         about_heading=about_heading,
-                         about_signature=about_signature,
-                         about_clients=about_clients,
-                         about_gear=about_gear,
-                         about_contact=about_contact,
+                         about_me=about.get("me", ""),
+                         about_heading=about.get("heading", tittle),
+                         about_signature=about.get("signature", ""),
+                         about_gear=about.get("gear", []),
+                         about_contact=about.get("contact", []),
                          google_analytics_id=google_analytics_id,
                          umami_website_id=umami_website_id)
 
@@ -178,7 +218,26 @@ def manage():
 def photo_list():
     """Get all photos with album information"""
     album_id = request.args.get('album_id', type=int)
-    full_info = request.args.get('full_info', type=bool, default=False)
+    full_info = request.args.get('full_info', 'false').lower() == 'true'
+    include_processing = request.args.get('include_processing', 'false').lower() == 'true'
+    limit = request.args.get('limit', type=int)
+    offset = request.args.get('offset', type=int, default=0)
+
+    if limit is not None:
+        photos = db.get_photos_paged(
+            album_id=album_id,
+            limit=limit,
+            offset=offset,
+            include_processing=include_processing,
+            include_album=full_info
+        )
+        total = db.get_photo_count(album_id=album_id, include_processing=include_processing)
+        if full_info:
+            items = photos
+        else:
+            items = [photo['filename'] for photo in photos]
+        next_offset = offset + limit if offset + limit < total else None
+        return jsonify({'items': items, 'next_offset': next_offset, 'total': total})
 
     if album_id is not None:
         # Get photos for specific album
@@ -186,6 +245,9 @@ def photo_list():
     else:
         # Get all photos
         photos = db.get_all_photos()
+
+    if not include_processing:
+        photos = [photo for photo in photos if photo.get('status') == 'ready']
 
     # Return full photo info for manage page, or just filenames for gallery
     if full_info:
@@ -197,11 +259,54 @@ def photo_list():
 @app.route('/api/albums')
 def get_albums():
     """Get all albums with photo counts"""
-    albums = db.get_all_albums()
-    # Add photo count to each album
-    for album in albums:
-        album['photo_count'] = db.get_album_photo_count(album['id'])
+    albums = db.get_all_albums_with_counts()
     return jsonify(albums)
+
+
+@app.route('/api/about', methods=['GET'])
+@login_required
+def get_about():
+    return jsonify(get_about_data())
+
+
+@app.route('/api/about', methods=['PUT'])
+@login_required
+def update_about():
+    data = request.json or {}
+    payload = {
+        "heading": data.get("heading", ""),
+        "me": data.get("me", ""),
+        "signature": data.get("signature", ""),
+        "gear": json.dumps(data.get("gear", [])),
+        "contact": json.dumps(data.get("contact", [])),
+    }
+    db.set_setting("about", json.dumps(payload))
+    return jsonify({'success': True, 'message': 'About updated'})
+
+
+@app.route('/api/events')
+@login_required
+def events():
+    """Server-Sent Events for admin updates"""
+    q = queue.Queue(maxsize=100)
+    with sse_lock:
+        sse_subscribers.append(q)
+
+    def stream():
+        try:
+            yield "event: init\ndata: {}\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    yield msg
+                except queue.Empty:
+                    yield ": keep-alive\n\n"
+        finally:
+            with sse_lock:
+                if q in sse_subscribers:
+                    sse_subscribers.remove(q)
+
+    return Response(stream_with_context(stream()), mimetype="text/event-stream")
 
 
 @app.route('/api/albums', methods=['POST'])
@@ -254,21 +359,36 @@ def serve_photo(filename):
 def delete_photo():
     filename = request.json.get('filename')
     if filename:
-        file_path = os.path.join(app.config['PHOTO_FOLDER'], filename)
-        thumbnail_path = os.path.join(
-            app.config['PHOTO_FOLDER'], filename.replace('.webp', '-thumbnail.webp'))
-        deleted = False
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            deleted = True
-        if os.path.exists(thumbnail_path):
-            os.remove(thumbnail_path)
-            deleted = True
+        deleted = delete_photo_files(filename)
         if deleted:
             # Remove from database
             db.delete_photo(filename)
+            sse_publish('photo_deleted', {'filename': filename})
             return jsonify({'success': True, 'message': 'Photo deleted successfully'})
     return jsonify({'success': False, 'message': 'Failed to delete photo'}), 400
+
+
+@app.route('/api/delete_photos', methods=['POST'])
+@login_required
+def delete_photos():
+    data = request.json or {}
+    filenames = data.get('filenames', [])
+    if not isinstance(filenames, list) or not filenames:
+        return jsonify({'success': False, 'message': 'No files provided'}), 400
+
+    deleted_any = False
+    for filename in filenames:
+        if not isinstance(filename, str):
+            continue
+        deleted = delete_photo_files(filename)
+        if deleted:
+            db.delete_photo(filename)
+            sse_publish('photo_deleted', {'filename': filename})
+            deleted_any = True
+
+    if deleted_any:
+        return jsonify({'success': True, 'message': 'Photos deleted successfully'})
+    return jsonify({'success': False, 'message': 'Failed to delete photos'}), 400
 
 
 @app.route('/api/photos/<filename>/album', methods=['PUT'])
@@ -291,24 +411,21 @@ def upload_photo():
     if file.filename == '':
         return jsonify({'success': False, 'message': 'No selected file'}), 400
     if file and allowed_file(file.filename):
+        file_ext = file.filename.rsplit('.', 1)[1].lower()
         filename = str(uuid.uuid4()) + '.webp'
-        file_path = os.path.join(app.config['PHOTO_FOLDER'], filename)
-        thumbnail_path = os.path.join(
-            app.config['PHOTO_FOLDER'], filename.replace('.webp', '-thumbnail.webp'))
+        temp_filename = filename.replace('.webp', f'.{file_ext}')
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
 
-        # Save and convert to webp
-        img = Image.open(file)
-        img.save(file_path, 'WEBP')
+        # Save original upload to temp path
+        file.save(temp_path)
 
-        # Create thumbnail
-        width, height = img.size
-        thumbnail_size = (int(width * 0.6), int(height * 0.6))
-        img.thumbnail(thumbnail_size)
-        img.save(thumbnail_path, 'WEBP')
-
-        # Add to database
+        # Add to database with processing status
         album_id = request.form.get('album_id', type=int)
-        db.add_photo(filename, album_id)
+        db.add_photo(filename, album_id, status='processing')
+        sse_publish('photo_status', {'filename': filename, 'status': 'processing'})
+
+        # Process in background
+        executor.submit(process_photo, temp_path, filename)
 
         return jsonify({'success': True, 'message': 'Photo uploaded successfully', 'filename': filename})
     return jsonify({'success': False, 'message': 'File type not allowed'}), 400
@@ -317,3 +434,58 @@ def upload_photo():
 def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def delete_photo_files(filename):
+    file_path = os.path.join(app.config['PHOTO_FOLDER'], filename)
+    thumbnail_path = os.path.join(
+        app.config['PHOTO_FOLDER'], filename.replace('.webp', '-thumbnail.webp'))
+    upload_glob = os.path.join(app.config['UPLOAD_FOLDER'], filename.replace('.webp', '.*'))
+    deleted = False
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        deleted = True
+    if os.path.exists(thumbnail_path):
+        os.remove(thumbnail_path)
+        deleted = True
+    for path in glob.glob(upload_glob):
+        os.remove(path)
+        deleted = True
+    return deleted
+
+
+def process_photo(temp_path, filename):
+    """Convert to webp + create optimized thumbnail in background"""
+    file_path = os.path.join(app.config['PHOTO_FOLDER'], filename)
+    thumbnail_path = os.path.join(
+        app.config['PHOTO_FOLDER'], filename.replace('.webp', '-thumbnail.webp'))
+
+    try:
+        with Image.open(temp_path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+
+            # Main image: limit max dimension
+            main_img = img.copy()
+            main_img.thumbnail((2400, 2400), Image.LANCZOS)
+            main_img.save(file_path, 'WEBP', quality=82, method=6, optimize=True)
+
+            # Thumbnail: larger and higher quality for sharper gallery
+            thumb = img.copy()
+            thumb.thumbnail((900, 900), Image.LANCZOS)
+            thumb.save(thumbnail_path, 'WEBP', quality=78, method=6, optimize=True)
+
+        db.update_photo_status(filename, 'ready')
+        try:
+            size_bytes = os.path.getsize(file_path)
+            db.update_photo_size(filename, size_bytes)
+        except Exception:
+            pass
+        sse_publish('photo_status', {'filename': filename, 'status': 'ready'})
+    except Exception:
+        db.update_photo_status(filename, 'failed')
+        sse_publish('photo_status', {'filename': filename, 'status': 'failed'})
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
