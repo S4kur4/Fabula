@@ -125,13 +125,16 @@ function appendImages(items) {
 
     const img = document.createElement("img");
     const src = `/static/photos/${photo}`;
-    img.src = src.replace(".webp", "-thumbnail.webp");
-    img.setAttribute("loading", "lazy");
     loadedCount += 1;
     img.alt = `Photo ${loadedCount}`;
     img.addEventListener("load", () => {
       resizeMasonryItem(container);
     });
+    img.src = src.replace(".webp", "-thumbnail.webp");
+    img.setAttribute("loading", "lazy");
+    if (img.complete) {
+      requestAnimationFrame(() => resizeMasonryItem(container));
+    }
 
     link.appendChild(img);
     container.appendChild(link);
@@ -181,6 +184,10 @@ function resizeMasonryItem(item) {
   const rowGap = parseFloat(styles.getPropertyValue("row-gap")) || 0;
   const rowHeight = parseFloat(styles.getPropertyValue("grid-auto-rows")) || 1;
   const itemHeight = item.getBoundingClientRect().height + rowGap;
+  if (itemHeight <= rowGap) {
+    requestAnimationFrame(() => resizeMasonryItem(item));
+    return;
+  }
   const rowSpan = Math.ceil(itemHeight / (rowHeight + rowGap));
   item.style.gridRowEnd = `span ${rowSpan}`;
 }
