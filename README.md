@@ -57,16 +57,13 @@ docker-compose up -d
 
 5. Use Nginx, Caddy and anyother popular web servers to point to `127.0.0.1:5001`
 
-### Photo Management
+### Media and About Content Management
 
-Visit `/manage` to login and manage photos, and you can remove or bulk upload your photos.
-
-### About Page Management
-
-The About page content is now managed in the admin UI:
+Click "Manage" or visit `/manage` to login and manage your photos and about content.
 
 1. Go to `/manage`
-2. Switch to the **About** tab
+2. Switch to the **Media** or **About** tab
+3. Upload/remove photos or edit albums
 3. Edit Heading / About Me / Signature / Gear / Contact
 4. Click **Save About**
 
