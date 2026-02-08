@@ -261,14 +261,12 @@ nav a.active::after {
 
 /* --- GALLERY GRID --- */
 .masonry-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-auto-rows: 8px;
-    gap: 20px;
+    position: relative;
+    width: 100%;
 }
 
 .gallery-item {
-    position: relative;
+    position: absolute;
     width: 100%;
     opacity: 0;
     transform: translateY(10px);
@@ -282,6 +280,10 @@ nav a.active::after {
     border-radius: 8px;
     display: block;
     vertical-align: top;
+}
+
+.gallery-item a {
+    display: block;
 }
 
 

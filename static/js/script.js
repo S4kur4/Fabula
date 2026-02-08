@@ -15,6 +15,8 @@ let loadedCount = 0;
 let pendingReset = false;
 let resizeTimeout = null;
 let revealObserver = null;
+let layoutScheduled = false;
+const GALLERY_GAP = 20;
 
 const PAGE_SIZE = 24;
 const sentinel = document.createElement("div");
@@ -130,7 +132,7 @@ function appendImages(items) {
     loadedCount += 1;
     img.alt = `Photo ${loadedCount}`;
     img.addEventListener("load", () => {
-      resizeMasonryItem(container);
+      scheduleLayout();
     });
 
     link.appendChild(img);
@@ -139,6 +141,12 @@ function appendImages(items) {
 
     if (revealObserver) {
       revealObserver.observe(container);
+    }
+
+    if (img.complete) {
+      requestAnimationFrame(() => {
+        scheduleLayout();
+      });
     }
   });
 
@@ -153,10 +161,7 @@ function appendImages(items) {
 
   // Recalculate layout for newly added items
   requestAnimationFrame(() => {
-    items.forEach((_, idx) => {
-      const item = gallery.children[gallery.children.length - items.length + idx];
-      if (item) resizeMasonryItem(item);
-    });
+    scheduleLayout();
   });
 }
 
@@ -174,15 +179,44 @@ function setupRevealObserver() {
   );
 }
 
-function resizeMasonryItem(item) {
-  const img = item.querySelector("img");
-  if (!img || !img.complete) return;
-  const styles = window.getComputedStyle(gallery);
-  const rowGap = parseFloat(styles.getPropertyValue("row-gap")) || 0;
-  const rowHeight = parseFloat(styles.getPropertyValue("grid-auto-rows")) || 1;
-  const itemHeight = img.getBoundingClientRect().height + rowGap;
-  const rowSpan = Math.ceil(itemHeight / (rowHeight + rowGap));
-  item.style.gridRowEnd = `span ${rowSpan}`;
+function layoutAll() {
+  const items = Array.from(gallery.children);
+  if (items.length === 0) return;
+
+  const containerWidth = gallery.clientWidth;
+  const columns = getColumnCount();
+  const columnWidth =
+    (containerWidth - GALLERY_GAP * (columns - 1)) / columns;
+  const columnHeights = new Array(columns).fill(0);
+
+  items.forEach((item) => {
+    const img = item.querySelector("img");
+    if (!img || !img.complete) return;
+
+    item.style.width = `${columnWidth}px`;
+
+    const minHeight = Math.min(...columnHeights);
+    const columnIndex = columnHeights.indexOf(minHeight);
+    const x = (columnWidth + GALLERY_GAP) * columnIndex;
+    const y = columnHeights[columnIndex];
+
+    item.style.left = `${x}px`;
+    item.style.top = `${y}px`;
+
+    columnHeights[columnIndex] =
+      y + item.getBoundingClientRect().height + GALLERY_GAP;
+  });
+
+  gallery.style.height = `${Math.max(...columnHeights)}px`;
+}
+
+function scheduleLayout() {
+  if (layoutScheduled) return;
+  layoutScheduled = true;
+  requestAnimationFrame(() => {
+    layoutScheduled = false;
+    layoutAll();
+  });
 }
 
 // Theme toggle
@@ -284,10 +318,15 @@ init();
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimeout);
   resizeTimeout = setTimeout(() => {
-    const items = Array.from(gallery.children);
-    items.forEach((item) => resizeMasonryItem(item));
+    scheduleLayout();
   }, 100);
 });
+
+function getColumnCount() {
+  if (window.matchMedia("(max-width: 576px)").matches) return 1;
+  if (window.matchMedia("(max-width: 768px)").matches) return 2;
+  return 3;
+}
 
 // Infinite scroll observer
 function setupInfiniteScroll() {
