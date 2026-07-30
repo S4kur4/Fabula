@@ -4,6 +4,7 @@ from flask import Blueprint, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from .db import get_db
+from .i18n import translate
 from .security import (
     admin_required,
     api_error,
@@ -72,13 +73,13 @@ def create_user():
     role = str(values.get("role", "photographer"))
     temporary_password = str(values.get("temporary_password", ""))
     if not valid_username(username):
-        return api_error("用户名需为 3 到 32 位字母、数字、点或下划线")
+        return api_error(translate("用户名需为 3 到 32 位字母、数字、点或下划线"))
     if not display_name:
-        return api_error("公开显示名称不能为空")
+        return api_error(translate("公开显示名称不能为空"))
     if role not in {"photographer", "admin"}:
-        return api_error("用户角色无效")
+        return api_error(translate("用户角色无效"))
     if not valid_password(temporary_password):
-        return api_error("临时密码至少 12 个字符，并同时包含字母和数字")
+        return api_error(translate("临时密码至少 12 个字符，并同时包含字母和数字"))
     connection = get_db()
     try:
         cursor = connection.execute(
@@ -97,7 +98,7 @@ def create_user():
         )
     except Exception as error:
         if "UNIQUE" in str(error).upper():
-            return api_error("该用户名已经存在")
+            return api_error(translate("该用户名已经存在"))
         raise
     audit(
         "user.created",
@@ -118,15 +119,15 @@ def update_user(user_id: int):
     display_name = str(values.get("display_name", "")).strip()[:80]
     role = str(values.get("role", "photographer"))
     if not display_name:
-        return api_error("公开显示名称不能为空")
+        return api_error(translate("公开显示名称不能为空"))
     if role not in {"photographer", "admin"}:
-        return api_error("用户角色无效")
+        return api_error(translate("用户角色无效"))
     connection = get_db()
     connection.execute("BEGIN IMMEDIATE")
     target = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if target is None:
         connection.rollback()
-        return api_error("用户不存在", 404)
+        return api_error(translate("用户不存在"), 404)
     if (
         target["role"] == "admin"
         and target["status"] == "active"
@@ -134,7 +135,7 @@ def update_user(user_id: int):
         and active_admin_count() <= 1
     ):
         connection.rollback()
-        return api_error("不能降级最后一位有效管理员", 409)
+        return api_error(translate("不能降级最后一位有效管理员"), 409)
     connection.execute(
         """
         UPDATE users
@@ -162,16 +163,16 @@ def update_status(user_id: int):
     values = request.get_json(silent=True) or {}
     status = str(values.get("status", ""))
     if status not in {"active", "inactive"}:
-        return api_error("账户状态无效")
+        return api_error(translate("账户状态无效"))
     connection = get_db()
     connection.execute("BEGIN IMMEDIATE")
     target = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if target is None:
         connection.rollback()
-        return api_error("用户不存在", 404)
+        return api_error(translate("用户不存在"), 404)
     if user_id == g.user["id"] and status == "inactive":
         connection.rollback()
-        return api_error("不能在当前会话中停用自己", 409)
+        return api_error(translate("不能在当前会话中停用自己"), 409)
     if (
         target["role"] == "admin"
         and target["status"] == "active"
@@ -179,7 +180,7 @@ def update_status(user_id: int):
         and active_admin_count() <= 1
     ):
         connection.rollback()
-        return api_error("不能停用最后一位有效管理员", 409)
+        return api_error(translate("不能停用最后一位有效管理员"), 409)
     connection.execute(
         """
         UPDATE users
@@ -203,15 +204,15 @@ def update_status(user_id: int):
 @admin_required
 def reset_password(user_id: int):
     if user_id == g.user["id"]:
-        return api_error("请在账户安全页面修改自己的密码", 409)
+        return api_error(translate("请在账户安全页面修改自己的密码"), 409)
     values = request.get_json(silent=True) or {}
     temporary_password = str(values.get("temporary_password", ""))
     if not valid_password(temporary_password):
-        return api_error("临时密码至少 12 个字符，并同时包含字母和数字")
+        return api_error(translate("临时密码至少 12 个字符，并同时包含字母和数字"))
     connection = get_db()
     target = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if target is None:
-        return api_error("用户不存在", 404)
+        return api_error(translate("用户不存在"), 404)
     connection.execute(
         """
         UPDATE users
@@ -224,7 +225,7 @@ def reset_password(user_id: int):
     )
     audit("user.password_reset", target_user_id=user_id)
     connection.commit()
-    return jsonify({"success": True, "message": "一次性临时密码已设置"})
+    return jsonify({"success": True, "message": translate("一次性临时密码已设置")})
 
 
 @bp.delete("/users/<int:user_id>")
@@ -235,21 +236,23 @@ def delete_user(user_id: int):
     target = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if target is None:
         connection.rollback()
-        return api_error("用户不存在", 404)
+        return api_error(translate("用户不存在"), 404)
     if user_id == g.user["id"]:
         connection.rollback()
-        return api_error("不能删除当前登录账号", 409)
+        return api_error(translate("不能删除当前登录账号"), 409)
     if (
         target["role"] == "admin"
         and target["status"] == "active"
         and active_admin_count() <= 1
     ):
         connection.rollback()
-        return api_error("不能删除最后一位有效管理员", 409)
+        return api_error(translate("不能删除最后一位有效管理员"), 409)
     counts = content_counts(user_id)
     if sum(counts.values()) > 0:
         connection.rollback()
-        return api_error("该用户仍拥有内容，只能先停用，不能直接删除", 409)
+        return api_error(
+            translate("该用户仍拥有内容，只能先停用，不能直接删除"), 409
+        )
     audit(
         "user.deleted",
         target_user_id=user_id,
@@ -257,7 +260,7 @@ def delete_user(user_id: int):
     )
     connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
     connection.commit()
-    return jsonify({"success": True, "message": "用户已删除"})
+    return jsonify({"success": True, "message": translate("用户已删除")})
 
 
 @bp.put("/site-copy")

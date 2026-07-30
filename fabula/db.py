@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
     initial_admin INTEGER NOT NULL DEFAULT 0
         CHECK (initial_admin IN (0, 1)),
     session_version INTEGER NOT NULL DEFAULT 1,
+    locale TEXT NOT NULL DEFAULT 'zh-CN'
+        CHECK (locale IN ('zh-CN', 'en')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     last_login_at TEXT
@@ -121,8 +123,20 @@ def close_db(_error: BaseException | None = None) -> None:
 
 
 def init_db() -> None:
-    get_db().executescript(SCHEMA)
-    get_db().commit()
+    connection = get_db()
+    connection.executescript(SCHEMA)
+    user_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()
+    }
+    if "locale" not in user_columns:
+        connection.execute(
+            """
+            ALTER TABLE users
+            ADD COLUMN locale TEXT NOT NULL DEFAULT 'zh-CN'
+                CHECK (locale IN ('zh-CN', 'en'))
+            """
+        )
+    connection.commit()
 
 
 def init_app(app) -> None:

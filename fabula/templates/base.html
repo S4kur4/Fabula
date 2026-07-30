@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light">
+<html lang="{{ current_locale }}" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <meta name="description" content="{{ brand_title }} 多摄影师共同维护的摄影作品与故事">
+  <meta name="description" content="{{ t('{site_title} 多摄影师共同维护的摄影作品与故事', site_title=brand_title) }}">
   <title>{% block title %}{{ brand_title }}{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='images/favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
-  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <a class="skip-link" href="#main-content">{{ t("跳到主要内容") }}</a>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       <div class="server-messages" hidden>
@@ -23,6 +23,7 @@
   {% endwith %}
   {% block body %}{% endblock %}
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script id="fabula-i18n" type="application/json">{{ client_i18n|tojson }}</script>
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>

@@ -9,6 +9,8 @@ from pathlib import Path
 from flask import current_app
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .i18n import translate
+
 
 STORAGE_PATTERN = re.compile(r"^[a-f0-9]{32}\.webp$")
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
@@ -57,13 +59,13 @@ def process_image(stream) -> dict:
     try:
         with Image.open(stream) as opened:
             if opened.format not in ALLOWED_FORMATS:
-                raise InvalidImage("仅支持 JPEG、PNG 和 WebP 图片")
+                raise InvalidImage(translate("仅支持 JPEG、PNG 和 WebP 图片"))
             if opened.width * opened.height > Image.MAX_IMAGE_PIXELS:
-                raise InvalidImage("图片像素数量超过安全处理限制")
+                raise InvalidImage(translate("图片像素数量超过安全处理限制"))
             image = ImageOps.exif_transpose(opened)
             image.load()
             if image.width < 32 or image.height < 32:
-                raise InvalidImage("图片尺寸过小")
+                raise InvalidImage(translate("图片尺寸过小"))
             if image.mode not in {"RGB", "RGBA"}:
                 image = image.convert("RGB")
             if image.mode == "RGBA":
@@ -76,7 +78,7 @@ def process_image(stream) -> dict:
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         original_path.unlink(missing_ok=True)
         thumb_path.unlink(missing_ok=True)
-        raise InvalidImage("图片文件无效或无法安全处理") from error
+        raise InvalidImage(translate("图片文件无效或无法安全处理")) from error
     except Exception:
         original_path.unlink(missing_ok=True)
         thumb_path.unlink(missing_ok=True)

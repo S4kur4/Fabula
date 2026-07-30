@@ -3,10 +3,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from flask import Blueprint, g, jsonify, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    abort,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db
+from .i18n import SUPPORTED_LOCALES, translate
 from .media import InvalidImage, delete_media, process_image
 from .security import (
     api_error,
@@ -14,6 +25,7 @@ from .security import (
     login_required,
     password_ready,
     refresh_current_user,
+    safe_next_url,
     valid_password,
 )
 from .settings import get_site_copy
@@ -44,7 +56,7 @@ def serialize_photo(row) -> dict:
         "story": row["story"],
         "original_name": row["original_name"],
         "album_id": row["album_id"],
-        "album_name": row["album_name"] or "未分类",
+        "album_name": row["album_name"] or translate("未分类"),
         "status": row["status"],
         "width": row["width"],
         "height": row["height"],
@@ -143,6 +155,29 @@ def workspace():
     )
 
 
+@bp.post("/locale")
+@login_required
+def update_locale():
+    locale = str(request.form.get("locale", "")).strip()
+    if locale not in SUPPORTED_LOCALES:
+        abort(400)
+    connection = get_db()
+    connection.execute(
+        """
+        UPDATE users
+        SET locale = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?
+        """,
+        (locale, g.user["id"]),
+    )
+    connection.commit()
+    session["locale"] = locale
+    refresh_current_user()
+    return redirect(
+        safe_next_url(request.form.get("next")) or url_for("studio.workspace")
+    )
+
+
 @bp.get("/api/photos")
 @password_ready
 def photo_list():
@@ -173,8 +208,8 @@ def revision():
 @password_ready
 def create_album():
     name = str((request.get_json(silent=True) or {}).get("name", "")).strip()
-    if not name or len(name) > 40 or name == "未分类":
-        return api_error("摄影集名称需为 1 到 40 个字符")
+    if not name or len(name) > 40 or name.casefold() in {"未分类", "uncategorized"}:
+        return api_error(translate("摄影集名称需为 1 到 40 个字符"))
     connection = get_db()
     try:
         cursor = connection.execute(
@@ -184,7 +219,7 @@ def create_album():
         connection.commit()
     except Exception as error:
         if "UNIQUE" in str(error).upper():
-            return api_error("你的摄影集中已经存在这个名称")
+            return api_error(translate("你的摄影集中已经存在这个名称"))
         raise
     return jsonify({"success": True, "album": {"id": cursor.lastrowid, "name": name, "photo_count": 0}})
 
@@ -193,15 +228,15 @@ def create_album():
 @password_ready
 def rename_album(album_id: int):
     name = str((request.get_json(silent=True) or {}).get("name", "")).strip()
-    if not name or len(name) > 40 or name == "未分类":
-        return api_error("摄影集名称需为 1 到 40 个字符")
+    if not name or len(name) > 40 or name.casefold() in {"未分类", "uncategorized"}:
+        return api_error(translate("摄影集名称需为 1 到 40 个字符"))
     connection = get_db()
     album = connection.execute(
         "SELECT * FROM albums WHERE id = ? AND user_id = ?",
         (album_id, g.user["id"]),
     ).fetchone()
     if album is None:
-        return api_error("摄影集不存在或不属于当前用户", 404)
+        return api_error(translate("摄影集不存在或不属于当前用户"), 404)
     try:
         connection.execute(
             """
@@ -214,9 +249,9 @@ def rename_album(album_id: int):
         connection.commit()
     except Exception as error:
         if "UNIQUE" in str(error).upper():
-            return api_error("你的摄影集中已经存在这个名称")
+            return api_error(translate("你的摄影集中已经存在这个名称"))
         raise
-    return jsonify({"success": True, "message": "摄影集已重命名"})
+    return jsonify({"success": True, "message": translate("摄影集已重命名")})
 
 
 @bp.delete("/api/albums/<int:album_id>")
@@ -231,7 +266,7 @@ def delete_album(album_id: int):
     ).fetchone()
     if album is None:
         connection.rollback()
-        return api_error("摄影集不存在或不属于当前用户", 404)
+        return api_error(translate("摄影集不存在或不属于当前用户"), 404)
     photos = connection.execute(
         "SELECT storage_name FROM photos WHERE album_id = ? AND user_id = ?",
         (album_id, g.user["id"]),
@@ -258,14 +293,19 @@ def delete_album(album_id: int):
             {
                 "success": True,
                 "deleted_photos": len(photos),
-                "message": f"摄影集及其中 {len(photos)} 张照片已删除",
+                "message": translate(
+                    "摄影集及其中 {count} 张照片已删除", count=len(photos)
+                ),
             }
         )
     return jsonify(
         {
             "success": True,
             "deleted_photos": 0,
-            "message": f"摄影集已删除，其中 {len(photos)} 张照片已移到未分类",
+            "message": translate(
+                "摄影集已删除，其中 {count} 张照片已移到未分类",
+                count=len(photos),
+            ),
         }
     )
 
@@ -284,10 +324,10 @@ def owned_album(album_id: int | None):
 def upload_photo():
     uploaded = request.files.get("photo")
     if uploaded is None or not uploaded.filename:
-        return api_error("请选择图片文件")
+        return api_error(translate("请选择图片文件"))
     album_id = request.form.get("album_id", type=int)
     if album_id is not None and owned_album(album_id) is None:
-        return api_error("不能向其他用户的摄影集上传照片", 403)
+        return api_error(translate("不能向其他用户的摄影集上传照片"), 403)
     try:
         processed = process_image(uploaded.stream)
     except InvalidImage as error:
@@ -344,9 +384,9 @@ def update_photo(photo_id: int):
         try:
             album_id = int(album_id)
         except (TypeError, ValueError):
-            return api_error("摄影集无效")
+            return api_error(translate("摄影集无效"))
         if owned_album(album_id) is None:
-            return api_error("不能把照片加入其他用户的摄影集", 403)
+            return api_error(translate("不能把照片加入其他用户的摄影集"), 403)
     connection = get_db()
     cursor = connection.execute(
         """
@@ -358,9 +398,9 @@ def update_photo(photo_id: int):
         (title, story, album_id, photo_id, g.user["id"]),
     )
     if cursor.rowcount != 1:
-        return api_error("照片不存在或不属于当前用户", 404)
+        return api_error(translate("照片不存在或不属于当前用户"), 404)
     connection.commit()
-    return jsonify({"success": True, "message": "照片内容已更新"})
+    return jsonify({"success": True, "message": translate("照片内容已更新")})
 
 
 @bp.delete("/api/photos/<int:photo_id>")
@@ -372,14 +412,14 @@ def delete_photo(photo_id: int):
         (photo_id, g.user["id"]),
     ).fetchone()
     if photo is None:
-        return api_error("照片不存在或不属于当前用户", 404)
+        return api_error(translate("照片不存在或不属于当前用户"), 404)
     connection.execute(
         "DELETE FROM photos WHERE id = ? AND user_id = ?",
         (photo_id, g.user["id"]),
     )
     connection.commit()
     delete_media(photo["storage_name"])
-    return jsonify({"success": True, "message": "照片已删除"})
+    return jsonify({"success": True, "message": translate("照片已删除")})
 
 
 @bp.post("/api/photos/bulk-delete")
@@ -388,10 +428,10 @@ def bulk_delete():
     values = request.get_json(silent=True) or {}
     identifiers = values.get("ids", [])
     if not isinstance(identifiers, list) or not identifiers:
-        return api_error("请选择需要删除的照片")
+        return api_error(translate("请选择需要删除的照片"))
     identifiers = [int(value) for value in identifiers if str(value).isdigit()]
     if not identifiers:
-        return api_error("请选择需要删除的照片")
+        return api_error(translate("请选择需要删除的照片"))
     placeholders = ",".join("?" for _ in identifiers)
     connection = get_db()
     rows = connection.execute(
@@ -402,7 +442,7 @@ def bulk_delete():
         [g.user["id"], *identifiers],
     ).fetchall()
     if not rows:
-        return api_error("没有可删除的照片", 404)
+        return api_error(translate("没有可删除的照片"), 404)
     owned_ids = [row["id"] for row in rows]
     owned_placeholders = ",".join("?" for _ in owned_ids)
     connection.execute(
@@ -426,9 +466,9 @@ def update_about():
     gear = values.get("gear", [])
     contact = values.get("contact", [])
     if not display_name:
-        return api_error("公开显示名称不能为空")
+        return api_error(translate("公开显示名称不能为空"))
     if not isinstance(gear, list) or not isinstance(contact, list):
-        return api_error("器材和联系方式格式无效")
+        return api_error(translate("器材和联系方式格式无效"))
     gear = [str(item).strip()[:120] for item in gear if str(item).strip()][:12]
     contact = [str(item).strip()[:180] for item in contact if str(item).strip()][:12]
     connection = get_db()
@@ -464,7 +504,7 @@ def update_about():
     )
     connection.commit()
     refresh_current_user()
-    return jsonify({"success": True, "message": "你的 About 已保存"})
+    return jsonify({"success": True, "message": translate("你的 About 已保存")})
 
 
 @bp.post("/api/account/password")
@@ -475,13 +515,13 @@ def change_password():
     new_password = str(values.get("new_password", ""))
     confirmation = str(values.get("confirmation", ""))
     if not check_password_hash(g.user["password_hash"], current_password):
-        return api_error("当前密码不正确")
+        return api_error(translate("当前密码不正确"))
     if not valid_password(new_password):
-        return api_error("新密码至少 12 个字符，并同时包含字母和数字")
+        return api_error(translate("新密码至少 12 个字符，并同时包含字母和数字"))
     if new_password == current_password:
-        return api_error("新密码不能与当前密码相同")
+        return api_error(translate("新密码不能与当前密码相同"))
     if new_password != confirmation:
-        return api_error("两次输入的新密码不一致")
+        return api_error(translate("两次输入的新密码不一致"))
     connection = get_db()
     connection.execute(
         """
@@ -497,4 +537,6 @@ def change_password():
     connection.commit()
     refresh_current_user()
     session["session_version"] = g.user["session_version"]
-    return jsonify({"success": True, "message": "密码已更新，其他会话已撤销"})
+    return jsonify(
+        {"success": True, "message": translate("密码已更新，其他会话已撤销")}
+    )

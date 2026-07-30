@@ -24,6 +24,8 @@ Fabula 是一个多摄影师共同展示、各自维护内容的轻量摄影站�
 - 图片类型和像素限制、重新编码、EXIF 方向纠正和元数据移除
 - 管理操作审计、最后一位有效管理员保护、含内容用户删除保护
 - 明暗主题、桌面与移动端布局、减少动态效果偏好支持
+- 中英文界面切换，语言偏好按账号保存，用户自定义内容保持原文
+- 可选 Cloudflare Turnstile 登录保护，服务端强制校验令牌
 
 ## 本地运行
 
@@ -70,6 +72,19 @@ FABULA_TRUST_PROXY_HEADERS=true
 ```
 
 只有在反向代理会清理并重新写入 `X-Forwarded-For` 时才启用 `FABULA_TRUST_PROXY_HEADERS`。容器默认只读、丢弃 Linux capabilities，并启用 `no-new-privileges`。仅 `/app/var` 和临时目录可写。
+
+### Cloudflare Turnstile
+
+在 Cloudflare 控制台创建 Turnstile Widget，将生产域名加入允许列表，然后同时配置：
+
+```dotenv
+FABULA_TURNSTILE_SITE_KEY=your-site-key
+FABULA_TURNSTILE_SECRET_KEY=your-secret-key
+FABULA_TURNSTILE_EXPECTED_HOSTNAMES=example.com,www.example.com
+FABULA_TURNSTILE_TIMEOUT_SECONDS=5
+```
+
+Site Key、Secret Key 和预期 hostname 必须完整配置，否则应用会拒绝启动，避免出现只展示组件但未完成服务端校验的失效保护。登录校验还会核对固定的 `login` action 与 Siteverify 返回的 hostname。Secret Key 只能存放在服务器环境变量或密钥管理系统中，不得写入代码或镜像。生产 Widget 不应允许 `localhost` 或 `127.0.0.1`。
 
 ## 数据与备份
 

@@ -3,19 +3,19 @@
 {% block body_class %}public-site{% endblock %}
 {% block body %}
   <header class="site-header" id="public-header">
-    <a class="wordmark" href="{{ url_for('public.index') }}" aria-label="返回 {{ site_copy.site_title }} 作品页">{{ site_copy.site_title }}</a>
-    <nav class="primary-nav" aria-label="主要导航">
-      <a class="nav-link is-active" href="#gallery" data-public-view="gallery">作品</a>
-      <a class="nav-link" href="#about" data-public-view="about">关于</a>
+    <a class="wordmark" href="{{ url_for('public.index') }}" aria-label="{{ t('返回 {site_title} 作品页', site_title=site_copy.site_title) }}">{{ site_copy.site_title }}</a>
+    <nav class="primary-nav" aria-label="{{ t('主要导航') }}">
+      <a class="nav-link is-active" href="#gallery" data-public-view="gallery">{{ t("作品") }}</a>
+      <a class="nav-link" href="#about" data-public-view="about">{{ t("关于") }}</a>
       <a class="nav-link mobile-login-link" href="{{ url_for('studio.workspace') if current_user else url_for('auth.login') }}">
-        {{ "工作台" if current_user else "登录" }}
+        {{ t("工作台") if current_user else t("登录") }}
       </a>
     </nav>
     <div class="header-actions">
       <a class="header-action" href="{{ url_for('studio.workspace') if current_user else url_for('auth.login') }}">
-        {{ "工作台" if current_user else "登录" }}
+        {{ t("工作台") if current_user else t("登录") }}
       </a>
-      <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">夜色</button>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="{{ t('切换明暗主题') }}">{{ t("夜色") }}</button>
     </div>
   </header>
 
@@ -24,7 +24,7 @@
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
           <div class="hero-meta">
-            <span>{{ profiles|length }} 位摄影师 / {{ total_photos }} 个故事</span>
+            <span>{{ t("{profiles} 位摄影师 / {stories} 个故事", profiles=profiles|length, stories=total_photos) }}</span>
           </div>
           <h1 class="hero-title" id="hero-title">
             {{ site_copy.hero_before }}<span>{{ site_copy.hero_accent }}</span>{{ site_copy.hero_after }}
@@ -36,9 +36,9 @@
         </div>
         <div class="hero-image-wrap">
           {% if photos %}
-            <img class="hero-image" src="{{ photos[0].image_url }}" alt="{{ photos[0].title or 'Fabula 摄影作品' }}">
+            <img class="hero-image" src="{{ photos[0].image_url }}" alt="{{ photos[0].title or t('Fabula 摄影作品') }}">
           {% else %}
-            <div class="hero-empty">等待第一张照片</div>
+            <div class="hero-empty">{{ t("等待第一张照片") }}</div>
           {% endif %}
         </div>
       </section>
@@ -49,15 +49,15 @@
           <p>{{ site_copy.archive_intro }}</p>
         </header>
 
-        <div class="collection-filter reveal" id="collection-filter" aria-label="摄影集筛选">
+        <div class="collection-filter reveal" id="collection-filter" aria-label="{{ t('摄影集筛选') }}">
           <button class="filter-button is-active" type="button" data-album-filter="" aria-pressed="true">
-            <span>全部作品</span>
-            <small>{{ total_photos }} 张照片</small>
+            <span>{{ t("全部作品") }}</span>
+            <small>{{ t("{count} 张照片", count=total_photos) }}</small>
           </button>
           {% for album in albums %}
             <button class="filter-button" type="button" data-album-filter="{{ album.id }}" aria-pressed="false">
               <span>{{ album.name }}</span>
-              <small>{{ album.photographer }} / {{ album.photo_count }} 张照片</small>
+              <small>{{ t("{photographer} / {count} 张照片", photographer=album.photographer, count=album.photo_count) }}</small>
             </button>
           {% endfor %}
         </div>
@@ -72,10 +72,10 @@
               data-photo-album="{{ photo.album }}"
               data-photo-image="{{ photo.image_url }}"
             >
-              <button class="photo-open" type="button" aria-label="打开《{{ photo.title or '未命名照片' }}》的照片故事">
+              <button class="photo-open" type="button" aria-label="{{ t('打开《{title}》的照片故事', title=photo.title or t('未命名照片')) }}">
                 <img
                   src="{{ photo.thumb_url }}"
-                  alt="{{ photo.title or '未命名照片' }}，摄影师 {{ photo.photographer }}"
+                  alt="{{ t('{title}，摄影师 {photographer}', title=photo.title or t('未命名照片'), photographer=photo.photographer) }}"
                   loading="{{ 'eager' if loop.index <= 3 else 'lazy' }}"
                   width="{{ photo.width }}"
                   height="{{ photo.height }}"
@@ -89,22 +89,22 @@
             </article>
           {% else %}
             <div class="empty-state">
-              <h3>这里还没有照片</h3>
-              <p>摄影师发布作品后，它们会出现在这里。</p>
+              <h3>{{ t("这里还没有照片") }}</h3>
+              <p>{{ t("摄影师发布作品后，它们会出现在这里。") }}</p>
             </div>
           {% endfor %}
         </div>
         <div class="gallery-sentinel" id="gallery-sentinel" data-next-offset="{{ photos|length if photos|length < total_photos else '' }}"></div>
         <div class="load-error" id="gallery-error" hidden>
-          <p>作品暂时无法继续加载。</p>
-          <button class="paper-button" type="button" data-gallery-retry>重试</button>
+          <p>{{ t("作品暂时无法继续加载。") }}</p>
+          <button class="paper-button" type="button" data-gallery-retry>{{ t("重试") }}</button>
         </div>
       </section>
 
       <footer class="site-footer">
         <div class="footer-mark">{{ site_copy.site_title }}</div>
-        <p>© {{ current_year }} 设计与开发 <a href="https://github.com/S4kur4" rel="noopener">s4kur4</a></p>
-        <p>影像版权归各自摄影师所有</p>
+        <p>© {{ current_year }} {{ t("设计与开发") }} <a href="https://github.com/S4kur4" rel="noopener">s4kur4</a></p>
+        <p>{{ t("影像版权归各自摄影师所有") }}</p>
       </footer>
     </section>
 
@@ -118,9 +118,9 @@
           {% for profile in profiles %}
             <article class="photographer-profile reveal">
               {% if profile.cover_url %}
-                <img class="profile-image" src="{{ profile.cover_url }}" alt="{{ profile.display_name }}的摄影作品">
+                <img class="profile-image" src="{{ profile.cover_url }}" alt="{{ t('{name}的摄影作品', name=profile.display_name) }}">
               {% else %}
-                <div class="profile-image profile-image-empty">等待作品</div>
+                <div class="profile-image profile-image-empty">{{ t("等待作品") }}</div>
               {% endif %}
               <div class="profile-copy">
                 <h2>{{ profile.display_name }}</h2>
@@ -130,16 +130,16 @@
                     {% for paragraph in profile.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
                   </div>
                   <dl class="profile-facts">
-                    <dt>作品</dt>
-                    <dd>{{ profile.photo_count }} 张照片</dd>
+                    <dt>{{ t("作品") }}</dt>
+                    <dd>{{ t("{count} 张照片", count=profile.photo_count) }}</dd>
                     {% if profile.gear %}
-                      <dt>器材</dt>
+                      <dt>{{ t("器材") }}</dt>
                       {% for item in profile.gear %}
                         <dd>{% if item.label %}<strong>{{ item.label }}</strong> / {% endif %}{{ item.value }}</dd>
                       {% endfor %}
                     {% endif %}
                     {% if profile.contact %}
-                      <dt>联系方式</dt>
+                      <dt>{{ t("联系方式") }}</dt>
                       {% for item in profile.contact %}
                         <dd>{% if item.label %}<strong>{{ item.label }}</strong> / {% endif %}{{ item.value }}</dd>
                       {% endfor %}
@@ -151,16 +151,16 @@
             </article>
           {% else %}
             <div class="empty-state">
-              <h2>介绍正在整理</h2>
-              <p>摄影师完成各自的个人介绍后会在这里共同出现。</p>
+              <h2>{{ t("介绍正在整理") }}</h2>
+              <p>{{ t("摄影师完成各自的个人介绍后会在这里共同出现。") }}</p>
             </div>
           {% endfor %}
         </div>
       </div>
       <footer class="site-footer">
         <div class="footer-mark">{{ site_copy.site_title }}</div>
-        <p>© {{ current_year }} 设计与开发 <a href="https://github.com/S4kur4" rel="noopener">s4kur4</a></p>
-        <p>每一种声音都保留自己的方向</p>
+        <p>© {{ current_year }} {{ t("设计与开发") }} <a href="https://github.com/S4kur4" rel="noopener">s4kur4</a></p>
+        <p>{{ t("每一种声音都保留自己的方向") }}</p>
       </footer>
     </section>
   </main>
@@ -171,17 +171,17 @@
         <img id="lightbox-image" alt="">
       </div>
       <div class="lightbox-copy">
-        <button class="dialog-close" type="button" data-close-dialog="lightbox" aria-label="关闭照片故事">×</button>
+        <button class="dialog-close" type="button" data-close-dialog="lightbox" aria-label="{{ t('关闭照片故事') }}">×</button>
         <p class="lightbox-meta" id="lightbox-meta"></p>
         <h2 id="lightbox-title"></h2>
         <p class="lightbox-story" id="lightbox-story"></p>
         <div class="lightbox-controls">
-          <button type="button" data-lightbox-move="-1">上一张</button>
-          <button type="button" data-lightbox-slideshow>播放</button>
-          <button type="button" data-lightbox-thumbnails aria-pressed="true">隐藏缩略图</button>
-          <button type="button" data-lightbox-move="1">下一张</button>
+          <button type="button" data-lightbox-move="-1">{{ t("上一张") }}</button>
+          <button type="button" data-lightbox-slideshow>{{ t("播放") }}</button>
+          <button type="button" data-lightbox-thumbnails aria-pressed="true">{{ t("隐藏缩略图") }}</button>
+          <button type="button" data-lightbox-move="1">{{ t("下一张") }}</button>
         </div>
-        <div class="lightbox-thumbs" id="lightbox-thumbs" aria-label="照片缩略图导航"></div>
+        <div class="lightbox-thumbs" id="lightbox-thumbs" aria-label="{{ t('照片缩略图导航') }}"></div>
       </div>
     </div>
   </dialog>

@@ -13,13 +13,14 @@
   const photoDialog = document.querySelector("#photo-dialog");
   const userDialog = document.querySelector("#user-dialog");
   const resetDialog = document.querySelector("#reset-password-dialog");
+  const t = window.Fabula.t;
   const selected = new Set();
   let albumFilter = "all";
   let users = [];
   let uploadPreviewUrl = "";
 
   document.querySelector("#logout-form")?.addEventListener("submit", (event) => {
-    if (!window.confirm("退出当前工作台并返回公开首页？")) {
+    if (!window.confirm(t("退出当前工作台并返回公开首页？"))) {
       event.preventDefault();
     }
   });
@@ -107,7 +108,7 @@
     });
     clearSelection();
 
-    const albumName = activeButton.dataset.albumName || "全部照片";
+    const albumName = activeButton.dataset.albumName || t("全部照片");
     const photoCount = Number(activeButton.dataset.albumPhotoCount || 0);
     const isSelectedAlbum = albumFilter !== "all" && albumFilter !== "uncategorized";
     const actionMode = isSelectedAlbum
@@ -120,14 +121,20 @@
     const title = document.querySelector("#photo-panel-title");
     const description = document.querySelector("#photo-panel-description");
     if (albumFilter === "all") {
-      title.textContent = "全部照片";
-      description.textContent = "这里汇总你拥有的全部照片。其他摄影师的内容不会出现在你的工作台中。";
+      title.textContent = t("全部照片");
+      description.textContent = t("这里汇总你拥有的全部照片。其他摄影师的内容不会出现在你的工作台中。");
     } else if (albumFilter === "uncategorized") {
-      title.textContent = "未分类";
-      description.textContent = `这里有 ${photoCount} 张尚未归入摄影集的照片。你可以批量选择或直接上传新照片。`;
+      title.textContent = t("未分类");
+      description.textContent = t(
+        "这里有 {count} 张尚未归入摄影集的照片。你可以批量选择或直接上传新照片。",
+        { count: photoCount },
+      );
     } else {
       title.textContent = albumName;
-      description.textContent = `这里只显示“${albumName}”中的 ${photoCount} 张照片，右侧操作均只作用于本摄影集。`;
+      description.textContent = t(
+        "这里只显示“{name}”中的 {count} 张照片，右侧操作均只作用于本摄影集。",
+        { name: albumName, count: photoCount },
+      );
     }
 
     const uploadAlbum = document.querySelector("#upload-album");
@@ -140,8 +147,8 @@
     }
     if (uploadTitle) {
       uploadTitle.textContent = isSelectedAlbum
-        ? `上传到“${albumName}”`
-        : albumFilter === "uncategorized" ? "上传未分类照片" : "加入你的摄影集";
+        ? t("上传到“{name}”", { name: albumName })
+        : albumFilter === "uncategorized" ? t("上传未分类照片") : t("加入你的摄影集");
     }
 
     if (updateUrl) {
@@ -172,7 +179,9 @@
   function openAlbumEditor(id = "", name = "") {
     document.querySelector("#editing-album-id").value = id;
     document.querySelector("#album-name").value = name;
-    document.querySelector("#album-dialog-title").textContent = id ? "重命名摄影集" : "新建摄影集";
+    document.querySelector("#album-dialog-title").textContent = id
+      ? t("重命名摄影集")
+      : t("新建摄影集");
     errorText(document.querySelector("#album-error"));
     window.Fabula.openDialog(albumDialog);
     window.setTimeout(() => document.querySelector("#album-name").focus(), 0);
@@ -196,7 +205,9 @@
     document.querySelector("#delete-album-id").value = albumFilter;
     document.querySelector("#delete-album-name").textContent = button.dataset.albumName;
     document.querySelector("#delete-album-impact").textContent =
-      `同步删除本摄影集中的 ${photoCount} 张照片，此操作无法恢复。`;
+      t("同步删除本摄影集中的 {count} 张照片，此操作无法恢复。", {
+        count: photoCount,
+      });
     document.querySelector('input[name="delete-album-mode"][value="keep"]').checked = true;
     errorText(document.querySelector("#delete-album-error"));
     window.Fabula.openDialog(deleteAlbumDialog);
@@ -230,7 +241,11 @@
         body: jsonBody({ name }),
       });
       window.Fabula.closeDialog(albumDialog);
-      window.Fabula.noticeAfterReload(id ? "摄影集已重命名" : "摄影集已创建", "success", false);
+      window.Fabula.noticeAfterReload(
+        id ? t("摄影集已重命名") : t("摄影集已创建"),
+        "success",
+        false,
+      );
       window.location.assign(photosUrl(id || payload.album.id));
     } catch (error) {
       errorText(document.querySelector("#album-error"), error.message);
@@ -262,7 +277,11 @@
       const preview = document.querySelector("#upload-preview");
       preview.src = uploadPreviewUrl;
       preview.hidden = false;
-      statusText.textContent = `正在处理 ${index + 1} / ${files.length}: ${files[index].name}`;
+      statusText.textContent = t("正在处理 {current} / {total}: {name}", {
+        current: index + 1,
+        total: files.length,
+        name: files[index].name,
+      });
       progress.value = Math.round((index / files.length) * 100);
       try {
         await window.Fabula.api("/studio/api/photos", {
@@ -275,9 +294,16 @@
       }
       progress.value = Math.round(((index + 1) / files.length) * 100);
     }
-    statusText.textContent = `完成 ${succeeded} / ${files.length}`;
+    statusText.textContent = t("完成 {current} / {total}", {
+      current: succeeded,
+      total: files.length,
+    });
     if (succeeded) {
-      window.Fabula.noticeAfterReload(`${succeeded} 张照片已加入你的档案`, "success", false);
+      window.Fabula.noticeAfterReload(
+        t("{count} 张照片已加入你的档案", { count: succeeded }),
+        "success",
+        false,
+      );
       window.setTimeout(() => window.location.assign(photosUrl()), 600);
     }
   }
@@ -320,7 +346,10 @@
     checkbox.className = "select-box";
     checkbox.type = "checkbox";
     checkbox.dataset.selectPhoto = String(photo.id);
-    checkbox.setAttribute("aria-label", `选择《${photo.title || "未命名照片"}》`);
+    checkbox.setAttribute(
+      "aria-label",
+      t("选择《{title}》", { title: photo.title || t("未命名照片") }),
+    );
 
     core.className = "manage-photo-core";
     if (photo.thumb_url) {
@@ -328,10 +357,13 @@
       image.alt = "";
     } else {
       image.className = "processing-image";
-      image.textContent = { processing: "处理中", failed: "处理失败" }[photo.status] || "等待处理";
+      image.textContent = {
+        processing: t("处理中"),
+        failed: t("处理失败"),
+      }[photo.status] || t("等待处理");
     }
-    title.textContent = photo.title || "未命名照片";
-    story.textContent = photo.story || "尚未添加故事背景。";
+    title.textContent = photo.title || t("未命名照片");
+    story.textContent = photo.story || t("尚未添加故事背景。");
     fileMeta.className = "photo-file-meta";
     fileMeta.textContent = `${photo.original_name} / ${Math.round(photo.size_bytes / 1024)} KB / ${photo.created_at.slice(0, 10)}`;
     copy.append(title, story, fileMeta);
@@ -339,7 +371,7 @@
 
     albumSelect.className = "inline-select";
     albumSelect.dataset.photoAlbum = String(photo.id);
-    albumSelect.setAttribute("aria-label", "调整照片所属摄影集");
+    albumSelect.setAttribute("aria-label", t("调整照片所属摄影集"));
     document.querySelectorAll("#upload-album option").forEach((sourceOption) => {
       const option = document.createElement("option");
       option.value = sourceOption.value;
@@ -350,14 +382,14 @@
 
     status.className = "status-text";
     status.textContent = {
-      ready: "已发布",
-      processing: "处理中",
-      failed: "处理失败",
-    }[photo.status] || "未知状态";
+      ready: t("已发布"),
+      processing: t("处理中"),
+      failed: t("处理失败"),
+    }[photo.status] || t("未知状态");
     edit.className = "row-action";
     edit.type = "button";
     edit.dataset.photoEdit = String(photo.id);
-    edit.textContent = "编辑或删除";
+    edit.textContent = t("编辑或删除");
     data.className = "photo-data";
     data.hidden = true;
     data.dataset.title = photo.title || "";
@@ -374,7 +406,7 @@
       return;
     }
     button.disabled = true;
-    button.textContent = "正在加载";
+    button.textContent = t("正在加载");
     try {
       const offset = Number(button.dataset.offset || 0);
       const payload = await window.Fabula.api(`/studio/api/photos?limit=24&offset=${offset}`);
@@ -385,11 +417,11 @@
       } else {
         button.dataset.offset = String(payload.next_offset);
         button.disabled = false;
-        button.textContent = "加载更多";
+        button.textContent = t("加载更多");
       }
     } catch (error) {
       button.disabled = false;
-      button.textContent = "重新加载";
+      button.textContent = t("重新加载");
       window.Fabula.showToast(error.message, "error");
     }
   }
@@ -416,7 +448,7 @@
     try {
       const payload = await window.Fabula.api("/studio/api/revision");
       if (payload.photo_revision !== app.dataset.photoRevision) {
-        window.Fabula.noticeAfterReload("全部照片已在另一个会话中更新");
+        window.Fabula.noticeAfterReload(t("全部照片已在另一个会话中更新"));
         window.location.assign(photosUrl());
       }
     } catch {
@@ -473,7 +505,7 @@
       });
       row.dataset.albumId = select.value;
       row.querySelector(".photo-data").dataset.album = select.value;
-      window.Fabula.noticeAfterReload("照片已重新归类");
+      window.Fabula.noticeAfterReload(t("照片已重新归类"));
       window.location.assign(photosUrl());
     } catch (error) {
       select.value = photo.album_id;
@@ -499,7 +531,9 @@
   });
 
   async function deletePhoto(id) {
-    const confirmed = window.confirm("删除这张照片和它的故事？此操作无法在工作台中撤销。");
+    const confirmed = window.confirm(
+      t("删除这张照片和它的故事？此操作无法在工作台中撤销。"),
+    );
     if (!confirmed) {
       return;
     }
@@ -569,7 +603,10 @@
 
   document.querySelector("[data-clear-selection]")?.addEventListener("click", clearSelection);
   document.querySelector("[data-bulk-delete]")?.addEventListener("click", async () => {
-    if (!selected.size || !window.confirm(`删除已选择的 ${selected.size} 张照片？`)) {
+    if (
+      !selected.size
+      || !window.confirm(t("删除已选择的 {count} 张照片？", { count: selected.size }))
+    ) {
       return;
     }
     try {
@@ -577,7 +614,9 @@
         method: "POST",
         body: jsonBody({ ids: [...selected] }),
       });
-      window.Fabula.noticeAfterReload(`${payload.deleted} 张照片已删除`);
+      window.Fabula.noticeAfterReload(
+        t("{count} 张照片已删除", { count: payload.deleted }),
+      );
       window.location.assign(photosUrl());
     } catch (error) {
       window.Fabula.showToast(error.message, "error");
@@ -683,8 +722,8 @@
       errorText(document.querySelector("#site-copy-error"));
       const siteTitle = document.querySelector("#copy-site-title").value.trim();
       document.querySelector(".studio-brand strong").textContent = siteTitle;
-      document.title = `工作台 | ${siteTitle}`;
-      window.Fabula.showToast("站点文案已保存");
+      document.title = `${t("工作台")} | ${siteTitle}`;
+      window.Fabula.showToast(t("站点文案已保存"));
     } catch (error) {
       errorText(document.querySelector("#site-copy-error"), error.message);
     }
@@ -704,21 +743,30 @@
     row.setAttribute("role", "row");
     row.dataset.userRow = String(user.id);
     strong.textContent = user.display_name;
-    note.textContent = user.id === currentUserId ? "当前账号" : user.must_change_password ? "等待修改临时密码" : "";
+    note.textContent = user.id === currentUserId
+      ? t("当前账号")
+      : user.must_change_password ? t("等待修改临时密码") : "";
     name.append(strong, note);
     username.textContent = user.username;
     role.className = "user-role";
-    role.textContent = user.role === "admin" ? "管理员" : "摄影师";
+    role.textContent = user.role === "admin" ? t("管理员") : t("摄影师");
     status.className = "user-status";
     status.dataset.status = user.status;
-    status.textContent = { active: "有效", inactive: "已停用", pending: "待启用" }[user.status] || user.status;
-    content.textContent = `${user.content.photos} 照片 / ${user.content.albums} 摄影集`;
+    status.textContent = {
+      active: t("有效"),
+      inactive: t("已停用"),
+      pending: t("待启用"),
+    }[user.status] || user.status;
+    content.textContent = t("{photos} 照片 / {albums} 摄影集", {
+      photos: user.content.photos,
+      albums: user.content.albums,
+    });
     actions.className = "user-actions";
     const actionSpecs = [
-      ["编辑", "edit"],
-      [user.status === "inactive" ? "启用" : "停用", "status"],
-      ["重置密码", "reset"],
-      ["删除", "delete"],
+      [t("编辑"), "edit"],
+      [user.status === "inactive" ? t("启用") : t("停用"), "status"],
+      [t("重置密码"), "reset"],
+      [t("删除"), "delete"],
     ];
     actionSpecs.forEach(([label, action]) => {
       const button = document.createElement("button");
@@ -752,7 +800,9 @@
 
   function openUserEditor(user = null) {
     document.querySelector("#editing-user-id").value = user ? String(user.id) : "";
-    document.querySelector("#user-dialog-title").textContent = user ? "编辑用户" : "创建用户";
+    document.querySelector("#user-dialog-title").textContent = user
+      ? t("编辑用户")
+      : t("创建用户");
     document.querySelector("#user-username").value = user?.username || "";
     document.querySelector("#user-username").disabled = Boolean(user);
     document.querySelector("#user-display-name").value = user?.display_name || "";
@@ -780,7 +830,7 @@
         body: jsonBody(values),
       });
       window.Fabula.closeDialog(userDialog);
-      window.Fabula.showToast(id ? "用户资料已更新" : "用户已创建");
+      window.Fabula.showToast(id ? t("用户资料已更新") : t("用户已创建"));
       if (Number(id) === currentUserId && values.role !== "admin") {
         window.location.assign("/studio");
         return;
@@ -806,7 +856,10 @@
     }
     if (button.dataset.userAction === "reset") {
       document.querySelector("#reset-user-id").value = String(user.id);
-      document.querySelector("#reset-password-impact").textContent = `将撤销 ${user.display_name} 的现有会话，并要求下次登录时修改密码。`;
+      document.querySelector("#reset-password-impact").textContent = t(
+        "将撤销 {name} 的现有会话，并要求下次登录时修改密码。",
+        { name: user.display_name },
+      );
       document.querySelector("#reset-temporary-password").value = "temporary-2026";
       errorText(document.querySelector("#reset-password-error"));
       window.Fabula.openDialog(resetDialog);
@@ -814,7 +867,8 @@
     }
     if (button.dataset.userAction === "status") {
       const status = user.status === "inactive" ? "active" : "inactive";
-      if (!window.confirm(`${status === "inactive" ? "停用" : "启用"}用户“${user.display_name}”？`)) {
+      const action = status === "inactive" ? t("停用") : t("启用");
+      if (!window.confirm(t("{action}用户“{name}”？", { action, name: user.display_name }))) {
         return;
       }
       try {
@@ -822,7 +876,11 @@
           method: "POST",
           body: jsonBody({ status }),
         });
-        window.Fabula.showToast(status === "inactive" ? "用户已停用，现有会话已撤销" : "用户已启用");
+        window.Fabula.showToast(
+          status === "inactive"
+            ? t("用户已停用，现有会话已撤销")
+            : t("用户已启用"),
+        );
         loadUsers();
       } catch (error) {
         window.Fabula.showToast(error.message, "error");
@@ -830,7 +888,13 @@
       return;
     }
     if (button.dataset.userAction === "delete") {
-      if (!window.confirm(`永久删除空账号“${user.display_name}”？拥有内容的用户不会被允许删除。`)) {
+      if (
+        !window.confirm(
+          t("永久删除空账号“{name}”？拥有内容的用户不会被允许删除。", {
+            name: user.display_name,
+          }),
+        )
+      ) {
         return;
       }
       try {

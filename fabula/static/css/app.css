@@ -153,7 +153,8 @@ img {
 
 .nav-link,
 .header-action,
-.theme-toggle {
+.theme-toggle,
+.locale-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -187,7 +188,8 @@ img {
 .nav-link:hover,
 .nav-link.is-active,
 .header-action:hover,
-.theme-toggle:hover {
+.theme-toggle:hover,
+.locale-toggle:hover {
   color: var(--ink);
 }
 
@@ -210,14 +212,22 @@ img {
 }
 
 .header-action,
-.theme-toggle {
+.theme-toggle,
+.locale-toggle {
   min-height: 40px;
   padding: 0 12px;
+  white-space: nowrap;
 }
 
 .theme-toggle {
   min-width: 56px;
   border-left: 1px solid var(--line);
+}
+
+.locale-toggle {
+  min-width: 64px;
+  border-left: 1px solid var(--line);
+  white-space: nowrap;
 }
 
 .public-view {
@@ -911,6 +921,15 @@ img {
   margin-top: 44px;
 }
 
+.turnstile-field {
+  min-height: 65px;
+  margin: 2px 0 22px;
+}
+
+.turnstile-field .cf-turnstile {
+  width: 100%;
+}
+
 .login-footnote {
   max-width: 48ch;
   margin: 32px 0 0;
@@ -1105,6 +1124,10 @@ img {
 
 .studio-header-actions form {
   margin: 0;
+}
+
+.locale-switch-form {
+  display: flex;
 }
 
 .studio-layout {
@@ -2241,6 +2264,7 @@ img {
   }
 
   .studio-brand {
+    min-width: 0;
     padding-left: 16px;
   }
 
@@ -2250,6 +2274,14 @@ img {
 
   .studio-header-actions {
     padding-right: 4px;
+  }
+
+  .studio-header-actions .header-action,
+  .studio-header-actions .theme-toggle,
+  .studio-header-actions .locale-toggle {
+    min-width: 48px;
+    padding-right: 8px;
+    padding-left: 8px;
   }
 
   .studio-panel {

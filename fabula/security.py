@@ -22,6 +22,7 @@ from flask import (
 )
 
 from .db import get_db
+from .i18n import translate
 
 
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._]{3,32}$")
@@ -84,7 +85,7 @@ def login_required(view):
     def wrapped(**kwargs):
         if g.user is None:
             if wants_json():
-                return api_error("需要登录后继续", 401)
+                return api_error(translate("需要登录后继续"), 401)
             return redirect(url_for("auth.login", next=request.full_path))
         return view(**kwargs)
 
@@ -97,8 +98,8 @@ def password_ready(view):
     def wrapped(**kwargs):
         if g.user["must_change_password"]:
             if wants_json():
-                return api_error("请先更换一次性临时密码", 403)
-            flash("请先更换一次性临时密码", "warning")
+                return api_error(translate("请先更换一次性临时密码"), 403)
+            flash(translate("请先更换一次性临时密码"), "warning")
             return redirect(url_for("studio.workspace", tab="security"))
         return view(**kwargs)
 
@@ -111,7 +112,7 @@ def admin_required(view):
     def wrapped(**kwargs):
         if g.user["role"] != "admin":
             if wants_json():
-                return api_error("只有管理员可以执行此操作", 403)
+                return api_error(translate("只有管理员可以执行此操作"), 403)
             abort(403)
         return view(**kwargs)
 
@@ -195,7 +196,9 @@ def init_app(app) -> None:
     def protect_unsafe_methods():
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not validate_csrf():
             if wants_json():
-                return api_error("安全令牌已失效，请刷新页面后重试", 400)
+                return api_error(
+                    translate("安全令牌已失效，请刷新页面后重试"), 400
+                )
             abort(400)
         return None
 
@@ -212,6 +215,13 @@ def init_app(app) -> None:
             "Permissions-Policy",
             "camera=(), microphone=(), geolocation=(), payment=()",
         )
+        turnstile_origin = "https://challenges.cloudflare.com"
+        turnstile_enabled = bool(
+            current_app.config.get("TURNSTILE_SITE_KEY")
+            and current_app.config.get("TURNSTILE_SECRET_KEY")
+        )
+        script_sources = f"'self' {turnstile_origin}" if turnstile_enabled else "'self'"
+        frame_sources = turnstile_origin if turnstile_enabled else "'none'"
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
@@ -219,10 +229,11 @@ def init_app(app) -> None:
             "connect-src 'self'; "
             "font-src 'self'; "
             "form-action 'self'; "
+            f"frame-src {frame_sources}; "
             "frame-ancestors 'none'; "
             "img-src 'self' blob: data:; "
             "object-src 'none'; "
-            "script-src 'self'; "
+            f"script-src {script_sources}; "
             "style-src 'self'",
         )
         if request.path.startswith(("/studio", "/api/", "/login")):

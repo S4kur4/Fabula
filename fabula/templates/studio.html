@@ -1,146 +1,152 @@
 {% extends "base.html" %}
-{% block title %}工作台 | {{ site_copy.site_title }}{% endblock %}
+{% block title %}{{ t("工作台") }} | {{ site_copy.site_title }}{% endblock %}
 {% block body_class %}studio-page{% endblock %}
 {% block body %}
   <div class="studio-shell" id="studio-app" data-active-tab="{{ active_tab }}" data-role="{{ current_user.role }}" data-user-id="{{ current_user.id }}" data-photo-revision="{{ photo_revision }}">
     <header class="studio-header">
       <div class="studio-brand">
         <strong>{{ site_copy.site_title }}</strong>
-        <span>{{ "管理员工作台" if current_user.role == "admin" else "个人工作台" }}</span>
+        <span>{{ t("管理员工作台") if current_user.role == "admin" else t("个人工作台") }}</span>
       </div>
-      <a class="text-link" href="{{ url_for('public.index') }}">查看公开站</a>
+      <a class="text-link" href="{{ url_for('public.index') }}">{{ t("查看公开站") }}</a>
       <div class="studio-header-actions">
-        <span class="session-label">已登录: {{ current_user.username }}</span>
-        <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">夜色</button>
+        <span class="session-label">{{ t("已登录: {username}", username=current_user.username) }}</span>
+        <form class="locale-switch-form" method="post" action="{{ url_for('studio.update_locale') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="locale" value="{{ locale_switch_target }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <button class="locale-toggle" type="submit" aria-label="{{ t('切换为英文') if current_locale == 'zh-CN' else t('切换为中文') }}">{{ locale_switch_label }}</button>
+        </form>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="{{ t('切换明暗主题') }}">{{ t("夜色") }}</button>
         <form id="logout-form" method="post" action="{{ url_for('auth.logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="header-action" type="submit">退出</button>
+          <button class="header-action" type="submit">{{ t("退出") }}</button>
         </form>
       </div>
     </header>
 
     <div class="studio-layout">
-      <aside class="studio-sidebar" aria-label="工作台导航">
+      <aside class="studio-sidebar" aria-label="{{ t('工作台导航') }}">
         <div class="user-card">
-          <span class="session-label">{{ "管理员" if current_user.role == "admin" else "摄影师" }}</span>
+          <span class="session-label">{{ t("管理员") if current_user.role == "admin" else t("摄影师") }}</span>
           <h2>{{ current_user.display_name }}</h2>
-          <p>{{ photo_total }} 张照片 / {{ albums|length }} 个摄影集</p>
+          <p>{{ t("{photos} 张照片 / {albums} 个摄影集", photos=photo_total, albums=albums|length) }}</p>
         </div>
 
         {% if not current_user.must_change_password %}
           <section class="album-panel" aria-labelledby="album-nav-title">
-            <h3 id="album-nav-title">我的摄影集</h3>
-            <button class="album-nav-button is-active" type="button" data-owned-album="all" data-album-name="全部照片" data-album-photo-count="{{ photo_total }}">
-              <span>全部照片</span><small>{{ photo_total }}</small>
+            <h3 id="album-nav-title">{{ t("我的摄影集") }}</h3>
+            <button class="album-nav-button is-active" type="button" data-owned-album="all" data-album-name="{{ t('全部照片') }}" data-album-photo-count="{{ photo_total }}">
+              <span>{{ t("全部照片") }}</span><small>{{ photo_total }}</small>
             </button>
             {% for album in albums %}
               <button class="album-nav-button" type="button" data-owned-album="{{ album.id }}" data-album-name="{{ album.name }}" data-album-photo-count="{{ album.photo_count }}">
                 <span>{{ album.name }}</span><small>{{ album.photo_count }}</small>
               </button>
             {% endfor %}
-            <button class="album-nav-button" type="button" data-owned-album="uncategorized" data-album-name="未分类" data-album-photo-count="{{ uncategorized_total }}">
-              <span>未分类</span><small id="uncategorized-count">{{ uncategorized_total }}</small>
+            <button class="album-nav-button" type="button" data-owned-album="uncategorized" data-album-name="{{ t('未分类') }}" data-album-photo-count="{{ uncategorized_total }}">
+              <span>{{ t("未分类") }}</span><small id="uncategorized-count">{{ uncategorized_total }}</small>
             </button>
           </section>
         {% endif %}
 
         <nav class="studio-nav">
           {% if not current_user.must_change_password %}
-            <span class="studio-nav-label">个人空间</span>
-            <button type="button" data-studio-tab="about">我的介绍</button>
+            <span class="studio-nav-label">{{ t("个人空间") }}</span>
+            <button type="button" data-studio-tab="about">{{ t("我的介绍") }}</button>
           {% endif %}
-          <button type="button" data-studio-tab="security">账户安全</button>
+          <button type="button" data-studio-tab="security">{{ t("账户安全") }}</button>
           {% if current_user.role == "admin" and not current_user.must_change_password %}
-            <span class="studio-nav-label">站点治理</span>
-            <button type="button" data-studio-tab="site-copy">站点文案</button>
-            <button type="button" data-studio-tab="users">用户管理</button>
+            <span class="studio-nav-label">{{ t("站点治理") }}</span>
+            <button type="button" data-studio-tab="site-copy">{{ t("站点文案") }}</button>
+            <button type="button" data-studio-tab="users">{{ t("用户管理") }}</button>
           {% endif %}
         </nav>
       </aside>
 
       <main class="studio-main" id="main-content">
         {% if current_user.must_change_password %}
-          <div class="forced-password-notice">你正在使用一次性临时密码。设置新密码后才能使用其他工作台功能。</div>
+          <div class="forced-password-notice">{{ t("你正在使用一次性临时密码。设置新密码后才能使用其他工作台功能。") }}</div>
         {% endif %}
 
         <section class="studio-panel" data-studio-panel="photos">
           <header class="studio-titlebar">
             <div>
-              <h1 id="photo-panel-title">全部照片</h1>
-              <p id="photo-panel-description">这里只显示{{ current_user.display_name }}拥有的内容。其他摄影师的摄影集不会出现在归类选项中。</p>
+              <h1 id="photo-panel-title">{{ t("全部照片") }}</h1>
+              <p id="photo-panel-description">{{ t("这里只显示{name}拥有的内容。其他摄影师的摄影集不会出现在归类选项中。", name=current_user.display_name) }}</p>
             </div>
             <div class="studio-title-actions">
               <div class="album-context-actions" data-album-actions="general">
-                <button class="paper-button" type="button" data-open-album>新建摄影集</button>
+                <button class="paper-button" type="button" data-open-album>{{ t("新建摄影集") }}</button>
               </div>
               <div class="album-context-actions" data-album-actions="selected" hidden>
-                <button class="paper-button" type="button" data-context-rename-album>修改名称</button>
-                <button class="paper-button" type="button" data-context-select-photos>批量删除照片</button>
-                <button class="danger-button" type="button" data-context-delete-album>删除摄影集</button>
+                <button class="paper-button" type="button" data-context-rename-album>{{ t("修改名称") }}</button>
+                <button class="paper-button" type="button" data-context-select-photos>{{ t("批量删除照片") }}</button>
+                <button class="danger-button" type="button" data-context-delete-album>{{ t("删除摄影集") }}</button>
               </div>
               <div class="album-context-actions" data-album-actions="uncategorized" hidden>
-                <button class="paper-button" type="button" data-context-select-photos>批量删除照片</button>
+                <button class="paper-button" type="button" data-context-select-photos>{{ t("批量删除照片") }}</button>
               </div>
             </div>
           </header>
 
           <section class="upload-zone" id="upload-zone" aria-labelledby="upload-title">
             <div>
-              <h2 id="upload-title">加入你的摄影集</h2>
-              <p>支持 JPEG、PNG 和 WebP。单张不超过应用配置的上传限制。</p>
+              <h2 id="upload-title">{{ t("加入你的摄影集") }}</h2>
+              <p>{{ t("支持 JPEG、PNG 和 WebP。单张不超过应用配置的上传限制。") }}</p>
             </div>
-            <label class="paper-button file-button" for="photo-upload">选择照片</label>
+            <label class="paper-button file-button" for="photo-upload">{{ t("选择照片") }}</label>
             <input id="photo-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple>
             <label class="upload-target">
-              <span>上传到</span>
+              <span>{{ t("上传到") }}</span>
               <select id="upload-album">
-                <option value="">未分类</option>
+                <option value="">{{ t("未分类") }}</option>
                 {% for album in albums %}<option value="{{ album.id }}">{{ album.name }}</option>{% endfor %}
               </select>
             </label>
             <div class="upload-status" id="upload-status" hidden>
-              <img class="upload-preview" id="upload-preview" alt="当前上传图片预览" hidden>
-              <span id="upload-status-text">准备上传</span>
+              <img class="upload-preview" id="upload-preview" alt="{{ t('当前上传图片预览') }}" hidden>
+              <span id="upload-status-text">{{ t("准备上传") }}</span>
               <progress id="upload-progress" max="100" value="0"></progress>
             </div>
           </section>
 
           <div class="bulk-bar" id="bulk-bar" hidden>
-            <p><span id="selected-count">0</span> 张照片已选择</p>
+            <p><span id="selected-count">0</span> {{ t("张照片已选择") }}</p>
             <div>
-              <button type="button" data-select-visible>选择当前列表</button>
-              <button type="button" data-clear-selection>清空</button>
-              <button type="button" data-bulk-delete>删除</button>
+              <button type="button" data-select-visible>{{ t("选择当前列表") }}</button>
+              <button type="button" data-clear-selection>{{ t("清空") }}</button>
+              <button type="button" data-bulk-delete>{{ t("删除") }}</button>
             </div>
           </div>
 
           <div class="photo-list-head" aria-hidden="true">
-            <span></span><span>照片与故事</span><span>摄影集</span><span>状态</span><span>操作</span>
+            <span></span><span>{{ t("照片与故事") }}</span><span>{{ t("摄影集") }}</span><span>{{ t("状态") }}</span><span>{{ t("操作") }}</span>
           </div>
           <div class="manage-photo-list" id="manage-photo-list">
             {% for photo in photos %}
               <article class="manage-photo" data-managed-photo="{{ photo.id }}" data-album-id="{{ photo.album_id or '' }}">
-                <input class="select-box" type="checkbox" data-select-photo="{{ photo.id }}" aria-label="选择《{{ photo.title or '未命名照片' }}》">
+                <input class="select-box" type="checkbox" data-select-photo="{{ photo.id }}" aria-label="{{ t('选择《{title}》', title=photo.title or t('未命名照片')) }}">
                 <div class="manage-photo-core">
                   {% if photo.thumb_url %}
                     <img src="{{ photo.thumb_url }}" alt="">
                   {% else %}
-                    <div class="processing-image">{{ {"processing": "处理中", "failed": "处理失败"}.get(photo.status, "等待处理") }}</div>
+                    <div class="processing-image">{{ t({"processing": "处理中", "failed": "处理失败"}.get(photo.status, "等待处理")) }}</div>
                   {% endif %}
                   <div>
-                    <h3>{{ photo.title or "未命名照片" }}</h3>
-                    <p>{{ photo.story or "尚未添加故事背景。" }}</p>
+                    <h3>{{ photo.title or t("未命名照片") }}</h3>
+                    <p>{{ photo.story or t("尚未添加故事背景。") }}</p>
                     <small class="photo-file-meta">{{ photo.original_name }} / {{ (photo.size_bytes / 1024)|round|int }} KB / {{ photo.created_at[:10] }}</small>
                   </div>
                 </div>
-                <select class="inline-select" data-photo-album="{{ photo.id }}" aria-label="调整照片所属摄影集">
-                  <option value="" {{ "selected" if photo.album_id is none }}>未分类</option>
+                <select class="inline-select" data-photo-album="{{ photo.id }}" aria-label="{{ t('调整照片所属摄影集') }}">
+                  <option value="" {{ "selected" if photo.album_id is none }}>{{ t("未分类") }}</option>
                   {% for album in albums %}
                     <option value="{{ album.id }}" {{ "selected" if photo.album_id == album.id }}>{{ album.name }}</option>
                   {% endfor %}
                 </select>
-                <span class="status-text">{{ {"ready": "已发布", "processing": "处理中", "failed": "处理失败"}.get(photo.status, "未知状态") }}</span>
-                <button class="row-action" type="button" data-photo-edit="{{ photo.id }}">编辑或删除</button>
+                <span class="status-text">{{ t({"ready": "已发布", "processing": "处理中", "failed": "处理失败"}.get(photo.status, "未知状态")) }}</span>
+                <button class="row-action" type="button" data-photo-edit="{{ photo.id }}">{{ t("编辑或删除") }}</button>
                 <div class="photo-data" hidden
                   data-title="{{ photo.title }}"
                   data-story="{{ photo.story }}"
@@ -150,62 +156,62 @@
               </article>
             {% else %}
               <div class="empty-state" id="photo-empty-state">
-                <h3>你的摄影集还是空的</h3>
-                <p>创建摄影集并上传第一张照片。</p>
+                <h3>{{ t("你的摄影集还是空的") }}</h3>
+                <p>{{ t("创建摄影集并上传第一张照片。") }}</p>
               </div>
             {% endfor %}
           </div>
           {% if photo_total > photos|length %}
-            <button class="paper-button load-more-button" type="button" id="studio-load-more" data-offset="{{ photos|length }}">加载更多</button>
+            <button class="paper-button load-more-button" type="button" id="studio-load-more" data-offset="{{ photos|length }}">{{ t("加载更多") }}</button>
           {% endif %}
         </section>
 
         <section class="studio-panel" data-studio-panel="about">
           <header class="studio-titlebar">
             <div>
-              <h1>我的介绍</h1>
+              <h1>{{ t("我的介绍") }}</h1>
             </div>
           </header>
           <div class="about-editor">
             <aside class="about-preview">
               {% if photos and photos[0].thumb_url %}
-                <img id="about-preview-image" src="{{ photos[0].thumb_url }}" alt="{{ current_user.display_name }}的个人介绍预览">
+                <img id="about-preview-image" src="{{ photos[0].thumb_url }}" alt="{{ t('{name}的个人介绍预览', name=current_user.display_name) }}">
               {% else %}
-                <div class="profile-image-empty">等待作品</div>
+                <div class="profile-image-empty">{{ t("等待作品") }}</div>
               {% endif %}
               <h2 id="about-preview-name">{{ current_user.display_name }}</h2>
-              <p id="about-preview-title">{{ about.title or "写下一句关于观看的话。" }}</p>
+              <p id="about-preview-title">{{ about.title or t("写下一句关于观看的话。") }}</p>
             </aside>
             <form class="workbench-form" id="about-form">
-              <div class="security-note">你只能编辑自己的个人介绍。公开页面会自动汇总所有摄影师已经发布的有效内容。</div>
+              <div class="security-note">{{ t("你只能编辑自己的个人介绍。公开页面会自动汇总所有摄影师已经发布的有效内容。") }}</div>
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="about-display-name">公开显示名称</label>
+                  <label for="about-display-name">{{ t("公开显示名称") }}</label>
                   <input id="about-display-name" value="{{ current_user.display_name }}" required>
                 </div>
                 <div class="form-field">
-                  <label for="about-signature">签名</label>
+                  <label for="about-signature">{{ t("签名") }}</label>
                   <input id="about-signature" value="{{ about.signature }}">
                 </div>
                 <div class="form-field is-wide">
-                  <label for="about-title">介绍标题</label>
+                  <label for="about-title">{{ t("介绍标题") }}</label>
                   <input id="about-title" value="{{ about.title }}" maxlength="180">
                 </div>
                 <div class="form-field is-wide">
-                  <label for="about-bio">个人介绍</label>
+                  <label for="about-bio">{{ t("个人介绍") }}</label>
                   <textarea id="about-bio" maxlength="2400">{{ about.bio }}</textarea>
                 </div>
                 <div class="form-field">
-                  <label for="about-gear">器材，每行一项，如 相机 / Leica M6</label>
+                  <label for="about-gear">{{ t("器材，每行一项，如 相机 / Leica M6") }}</label>
                   <textarea id="about-gear">{{ about.gear|join("\n") }}</textarea>
                 </div>
                 <div class="form-field">
-                  <label for="about-contact">联系方式，每行一项，如 邮箱 / name@example.com</label>
+                  <label for="about-contact">{{ t("联系方式，每行一项，如 邮箱 / name@example.com") }}</label>
                   <textarea id="about-contact">{{ about.contact|join("\n") }}</textarea>
                 </div>
               </div>
               <p class="form-error" id="about-error" role="alert"></p>
-              <button class="ink-button" type="submit">保存我的介绍</button>
+              <button class="ink-button" type="submit">{{ t("保存我的介绍") }}</button>
             </form>
           </div>
         </section>
@@ -213,29 +219,29 @@
         <section class="studio-panel" data-studio-panel="security">
           <header class="studio-titlebar">
             <div>
-              <h1>账户安全</h1>
+              <h1>{{ t("账户安全") }}</h1>
             </div>
           </header>
           <div class="account-layout">
             <aside class="workbench-aside">
-              <h2>修改登录密码</h2>
-              <p>至少 12 个字符，同时包含字母和数字。成功后，其他登录会话会被撤销。</p>
+              <h2>{{ t("修改登录密码") }}</h2>
+              <p>{{ t("至少 12 个字符，同时包含字母和数字。成功后，其他登录会话会被撤销。") }}</p>
             </aside>
             <form class="workbench-form" id="security-form">
               <div class="form-field">
-                <label for="current-password">当前密码</label>
+                <label for="current-password">{{ t("当前密码") }}</label>
                 <input id="current-password" type="password" autocomplete="current-password" required>
               </div>
               <div class="form-field">
-                <label for="new-password">新密码</label>
+                <label for="new-password">{{ t("新密码") }}</label>
                 <input id="new-password" type="password" autocomplete="new-password" required>
               </div>
               <div class="form-field">
-                <label for="confirm-password">确认新密码</label>
+                <label for="confirm-password">{{ t("确认新密码") }}</label>
                 <input id="confirm-password" type="password" autocomplete="new-password" required>
               </div>
               <p class="form-error" id="security-error" role="alert"></p>
-              <button class="ink-button" type="submit">更新我的密码</button>
+              <button class="ink-button" type="submit">{{ t("更新我的密码") }}</button>
             </form>
           </div>
         </section>
@@ -244,36 +250,36 @@
           <section class="studio-panel" data-studio-panel="site-copy">
             <header class="studio-titlebar">
               <div>
-                <h1>站点文案</h1>
+                <h1>{{ t("站点文案") }}</h1>
               </div>
             </header>
             <div class="site-copy-layout">
               <aside class="workbench-aside">
-                <h2>首页即时预览</h2>
-                <p>保存后会同步更新公开首页、作品页、关于页与登录页。</p>
+                <h2>{{ t("首页即时预览") }}</h2>
+                <p>{{ t("保存后会同步更新公开首页、作品页、关于页与登录页。") }}</p>
                 <div class="site-copy-preview">
-                  <span><strong id="copy-preview-site-title">{{ site_copy.site_title }}</strong> / 公开预览</span>
+                  <span><strong id="copy-preview-site-title">{{ site_copy.site_title }}</strong> / {{ t("公开预览") }}</span>
                   <h3><span id="copy-preview-before">{{ site_copy.hero_before }}</span><em id="copy-preview-accent">{{ site_copy.hero_accent }}</em><span id="copy-preview-after">{{ site_copy.hero_after }}</span></h3>
                   <p id="copy-preview-note">{{ site_copy.hero_note }}</p>
                 </div>
               </aside>
               <form class="workbench-form" id="site-copy-form">
                 <div class="form-grid">
-                  <div class="form-field is-wide"><label for="copy-site-title">网站主标题</label><input id="copy-site-title" value="{{ site_copy.site_title }}" maxlength="40" required></div>
-                  <div class="form-field"><label for="copy-hero-before">首页标题前段</label><input id="copy-hero-before" value="{{ site_copy.hero_before }}" required></div>
-                  <div class="form-field"><label for="copy-hero-accent">首页强调文字</label><input id="copy-hero-accent" value="{{ site_copy.hero_accent }}" required></div>
-                  <div class="form-field is-wide"><label for="copy-hero-after">首页标题后段</label><input id="copy-hero-after" value="{{ site_copy.hero_after }}" required></div>
-                  <div class="form-field is-wide"><label for="copy-hero-note">首页简介</label><textarea id="copy-hero-note" required>{{ site_copy.hero_note }}</textarea></div>
-                  <div class="form-field"><label for="copy-hero-cta">首页操作文案</label><input id="copy-hero-cta" value="{{ site_copy.hero_cta }}" required></div>
-                  <div class="form-field"><label for="copy-archive-title">作品页标题</label><input id="copy-archive-title" value="{{ site_copy.archive_title }}" required></div>
-                  <div class="form-field is-wide"><label for="copy-archive-intro">作品页简介</label><textarea id="copy-archive-intro" required>{{ site_copy.archive_intro }}</textarea></div>
-                  <div class="form-field"><label for="copy-about-title">关于页标题</label><input id="copy-about-title" value="{{ site_copy.about_title }}" required></div>
-                  <div class="form-field"><label for="copy-login-title">登录页标题</label><input id="copy-login-title" value="{{ site_copy.login_title }}" required></div>
-                  <div class="form-field is-wide"><label for="copy-about-intro">关于页简介</label><textarea id="copy-about-intro" required>{{ site_copy.about_intro }}</textarea></div>
-                  <div class="form-field is-wide"><label for="copy-login-intro">登录页简介</label><textarea id="copy-login-intro" required>{{ site_copy.login_intro }}</textarea></div>
+                  <div class="form-field is-wide"><label for="copy-site-title">{{ t("网站主标题") }}</label><input id="copy-site-title" value="{{ site_copy.site_title }}" maxlength="40" required></div>
+                  <div class="form-field"><label for="copy-hero-before">{{ t("首页标题前段") }}</label><input id="copy-hero-before" value="{{ site_copy.hero_before }}" required></div>
+                  <div class="form-field"><label for="copy-hero-accent">{{ t("首页强调文字") }}</label><input id="copy-hero-accent" value="{{ site_copy.hero_accent }}" required></div>
+                  <div class="form-field is-wide"><label for="copy-hero-after">{{ t("首页标题后段") }}</label><input id="copy-hero-after" value="{{ site_copy.hero_after }}" required></div>
+                  <div class="form-field is-wide"><label for="copy-hero-note">{{ t("首页简介") }}</label><textarea id="copy-hero-note" required>{{ site_copy.hero_note }}</textarea></div>
+                  <div class="form-field"><label for="copy-hero-cta">{{ t("首页操作文案") }}</label><input id="copy-hero-cta" value="{{ site_copy.hero_cta }}" required></div>
+                  <div class="form-field"><label for="copy-archive-title">{{ t("作品页标题") }}</label><input id="copy-archive-title" value="{{ site_copy.archive_title }}" required></div>
+                  <div class="form-field is-wide"><label for="copy-archive-intro">{{ t("作品页简介") }}</label><textarea id="copy-archive-intro" required>{{ site_copy.archive_intro }}</textarea></div>
+                  <div class="form-field"><label for="copy-about-title">{{ t("关于页标题") }}</label><input id="copy-about-title" value="{{ site_copy.about_title }}" required></div>
+                  <div class="form-field"><label for="copy-login-title">{{ t("登录页标题") }}</label><input id="copy-login-title" value="{{ site_copy.login_title }}" required></div>
+                  <div class="form-field is-wide"><label for="copy-about-intro">{{ t("关于页简介") }}</label><textarea id="copy-about-intro" required>{{ site_copy.about_intro }}</textarea></div>
+                  <div class="form-field is-wide"><label for="copy-login-intro">{{ t("登录页简介") }}</label><textarea id="copy-login-intro" required>{{ site_copy.login_intro }}</textarea></div>
                 </div>
                 <p class="form-error" id="site-copy-error" role="alert"></p>
-                <button class="ink-button" type="submit">保存站点文案</button>
+                <button class="ink-button" type="submit">{{ t("保存站点文案") }}</button>
               </form>
             </div>
           </section>
@@ -281,25 +287,25 @@
           <section class="studio-panel" data-studio-panel="users">
             <header class="studio-titlebar">
               <div>
-                <h1>用户管理</h1>
+                <h1>{{ t("用户管理") }}</h1>
               </div>
             </header>
             <div class="governance-note">
               <div>
-                <h2>首位管理员不是第一个注册用户</h2>
-                <p>首位管理员由一次性命令行初始化创建。新用户默认是普通摄影师，系统始终保留至少一位有效管理员。</p>
+                <h2>{{ t("首位管理员不是第一个注册用户") }}</h2>
+                <p>{{ t("首位管理员由一次性命令行初始化创建。新用户默认是普通摄影师，系统始终保留至少一位有效管理员。") }}</p>
               </div>
-              <button class="ink-button" type="button" data-open-user>创建用户</button>
+              <button class="ink-button" type="button" data-open-user>{{ t("创建用户") }}</button>
             </div>
-            <div class="user-table" role="table" aria-label="用户列表">
+            <div class="user-table" role="table" aria-label="{{ t('用户列表') }}">
               <div class="user-table-head" role="row">
-                <span>用户</span><span>用户名</span><span>角色</span><span>状态</span><span>拥有内容</span><span>操作</span>
+                <span>{{ t("用户") }}</span><span>{{ t("用户名") }}</span><span>{{ t("角色") }}</span><span>{{ t("状态") }}</span><span>{{ t("拥有内容") }}</span><span>{{ t("操作") }}</span>
               </div>
               <div id="user-list">
-                <div class="loading-state">正在读取用户列表</div>
+                <div class="loading-state">{{ t("正在读取用户列表") }}</div>
               </div>
             </div>
-            <p class="audit-footnote">角色、状态、密码重置和删除会写入审计事件。管理员无法读取现有密码。</p>
+            <p class="audit-footnote">{{ t("角色、状态、密码重置和删除会写入审计事件。管理员无法读取现有密码。") }}</p>
           </section>
         {% endif %}
       </main>
@@ -308,63 +314,63 @@
 
   <dialog class="dialog is-narrow" id="album-dialog">
     <form class="modal-form" id="album-form">
-      <button class="dialog-close" type="button" data-close-dialog="album-dialog" aria-label="关闭">×</button>
-      <h2 id="album-dialog-title">新建摄影集</h2>
+      <button class="dialog-close" type="button" data-close-dialog="album-dialog" aria-label="{{ t('关闭') }}">×</button>
+      <h2 id="album-dialog-title">{{ t("新建摄影集") }}</h2>
       <input id="editing-album-id" type="hidden">
       <div class="form-field">
-        <label for="album-name">摄影集名称</label>
+        <label for="album-name">{{ t("摄影集名称") }}</label>
         <input id="album-name" maxlength="40" required>
       </div>
       <p class="form-error" id="album-error" role="alert"></p>
       <div class="modal-actions">
-        <button class="paper-button" type="button" data-close-dialog="album-dialog">取消</button>
-        <button class="ink-button" type="submit">保存摄影集</button>
+        <button class="paper-button" type="button" data-close-dialog="album-dialog">{{ t("取消") }}</button>
+        <button class="ink-button" type="submit">{{ t("保存摄影集") }}</button>
       </div>
     </form>
   </dialog>
 
   <dialog class="dialog is-narrow" id="delete-album-dialog">
     <form class="modal-form" id="delete-album-form">
-      <button class="dialog-close" type="button" data-close-dialog="delete-album-dialog" aria-label="关闭">×</button>
-      <h2>删除摄影集</h2>
+      <button class="dialog-close" type="button" data-close-dialog="delete-album-dialog" aria-label="{{ t('关闭') }}">×</button>
+      <h2>{{ t("删除摄影集") }}</h2>
       <input id="delete-album-id" type="hidden">
-      <p class="role-impact">你正在删除摄影集“<strong id="delete-album-name"></strong>”。请选择如何处理其中的照片。</p>
+      <p class="role-impact">{{ t("你正在删除摄影集“") }}<strong id="delete-album-name"></strong>{{ t("”。请选择如何处理其中的照片。") }}</p>
       <div class="deletion-options">
         <label>
           <input type="radio" name="delete-album-mode" value="keep" checked>
-          <span><strong>保留照片</strong><small>仅删除摄影集，照片移到“未分类”。</small></span>
+          <span><strong>{{ t("保留照片") }}</strong><small>{{ t("仅删除摄影集，照片移到“未分类”。") }}</small></span>
         </label>
         <label>
           <input type="radio" name="delete-album-mode" value="delete">
-          <span><strong>同步删除照片</strong><small id="delete-album-impact">摄影集中的全部照片将被永久删除。</small></span>
+          <span><strong>{{ t("同步删除照片") }}</strong><small id="delete-album-impact">{{ t("摄影集中的全部照片将被永久删除。") }}</small></span>
         </label>
       </div>
-      <p class="deletion-warning">同步删除照片后无法在工作台中恢复，请谨慎选择。</p>
+      <p class="deletion-warning">{{ t("同步删除照片后无法在工作台中恢复，请谨慎选择。") }}</p>
       <p class="form-error" id="delete-album-error" role="alert"></p>
       <div class="modal-actions">
-        <button class="paper-button" type="button" data-close-dialog="delete-album-dialog">取消</button>
-        <button class="danger-button" type="submit">确认删除</button>
+        <button class="paper-button" type="button" data-close-dialog="delete-album-dialog">{{ t("取消") }}</button>
+        <button class="danger-button" type="submit">{{ t("确认删除") }}</button>
       </div>
     </form>
   </dialog>
 
   <dialog class="dialog" id="photo-dialog">
     <form class="modal-form" id="photo-form">
-      <button class="dialog-close" type="button" data-close-dialog="photo-dialog" aria-label="关闭">×</button>
-      <h2>编辑照片故事</h2>
+      <button class="dialog-close" type="button" data-close-dialog="photo-dialog" aria-label="{{ t('关闭') }}">×</button>
+      <h2>{{ t("编辑照片故事") }}</h2>
       <input id="editing-photo-id" type="hidden">
       <div class="photo-dialog-preview"><img id="photo-dialog-image" alt=""></div>
-      <div class="form-field"><label for="photo-title">照片标题</label><input id="photo-title" maxlength="80"></div>
-      <div class="form-field"><label for="photo-story">故事背景</label><textarea id="photo-story" maxlength="1200"></textarea></div>
+      <div class="form-field"><label for="photo-title">{{ t("照片标题") }}</label><input id="photo-title" maxlength="80"></div>
+      <div class="form-field"><label for="photo-story">{{ t("故事背景") }}</label><textarea id="photo-story" maxlength="1200"></textarea></div>
       <div class="form-field">
-        <label for="photo-album">所属摄影集</label>
-        <select id="photo-album"><option value="">未分类</option>{% for album in albums %}<option value="{{ album.id }}">{{ album.name }}</option>{% endfor %}</select>
+        <label for="photo-album">{{ t("所属摄影集") }}</label>
+        <select id="photo-album"><option value="">{{ t("未分类") }}</option>{% for album in albums %}<option value="{{ album.id }}">{{ album.name }}</option>{% endfor %}</select>
       </div>
       <p class="form-error" id="photo-error" role="alert"></p>
       <div class="modal-actions">
-        <button class="danger-button" type="button" data-delete-current-photo>删除照片</button>
-        <button class="paper-button" type="button" data-close-dialog="photo-dialog">取消</button>
-        <button class="ink-button" type="submit">保存修改</button>
+        <button class="danger-button" type="button" data-delete-current-photo>{{ t("删除照片") }}</button>
+        <button class="paper-button" type="button" data-close-dialog="photo-dialog">{{ t("取消") }}</button>
+        <button class="ink-button" type="submit">{{ t("保存修改") }}</button>
       </div>
     </form>
   </dialog>
@@ -372,38 +378,38 @@
   {% if current_user.role == "admin" %}
     <dialog class="dialog is-narrow" id="user-dialog">
       <form class="modal-form" id="user-form">
-        <button class="dialog-close" type="button" data-close-dialog="user-dialog" aria-label="关闭">×</button>
-        <h2 id="user-dialog-title">创建用户</h2>
+        <button class="dialog-close" type="button" data-close-dialog="user-dialog" aria-label="{{ t('关闭') }}">×</button>
+        <h2 id="user-dialog-title">{{ t("创建用户") }}</h2>
         <input id="editing-user-id" type="hidden">
         <div class="form-grid">
-          <div class="form-field"><label for="user-username">用户名</label><input id="user-username" autocomplete="off" required></div>
-          <div class="form-field"><label for="user-display-name">公开显示名称</label><input id="user-display-name" required></div>
+          <div class="form-field"><label for="user-username">{{ t("用户名") }}</label><input id="user-username" autocomplete="off" required></div>
+          <div class="form-field"><label for="user-display-name">{{ t("公开显示名称") }}</label><input id="user-display-name" required></div>
           <div class="form-field">
-            <label for="user-role">角色</label>
-            <select id="user-role"><option value="photographer">普通摄影师</option><option value="admin">管理员</option></select>
+            <label for="user-role">{{ t("角色") }}</label>
+            <select id="user-role"><option value="photographer">{{ t("普通摄影师") }}</option><option value="admin">{{ t("管理员") }}</option></select>
           </div>
-          <div class="form-field" id="temporary-password-field"><label for="user-temporary-password">一次性临时密码</label><input id="user-temporary-password" type="password" value="welcome-2026"></div>
+          <div class="form-field" id="temporary-password-field"><label for="user-temporary-password">{{ t("一次性临时密码") }}</label><input id="user-temporary-password" type="password" value="welcome-2026"></div>
         </div>
-        <p class="role-impact">管理员可以治理用户与站点文案，但不会获得其他摄影师内容的编辑权。</p>
+        <p class="role-impact">{{ t("管理员可以治理用户与站点文案，但不会获得其他摄影师内容的编辑权。") }}</p>
         <p class="form-error" id="user-error" role="alert"></p>
         <div class="modal-actions">
-          <button class="paper-button" type="button" data-close-dialog="user-dialog">取消</button>
-          <button class="ink-button" type="submit">保存用户</button>
+          <button class="paper-button" type="button" data-close-dialog="user-dialog">{{ t("取消") }}</button>
+          <button class="ink-button" type="submit">{{ t("保存用户") }}</button>
         </div>
       </form>
     </dialog>
 
     <dialog class="dialog is-narrow" id="reset-password-dialog">
       <form class="modal-form" id="reset-password-form">
-        <button class="dialog-close" type="button" data-close-dialog="reset-password-dialog" aria-label="关闭">×</button>
-        <h2>设置临时密码</h2>
+        <button class="dialog-close" type="button" data-close-dialog="reset-password-dialog" aria-label="{{ t('关闭') }}">×</button>
+        <h2>{{ t("设置临时密码") }}</h2>
         <input id="reset-user-id" type="hidden">
         <p class="role-impact" id="reset-password-impact"></p>
-        <div class="form-field"><label for="reset-temporary-password">一次性临时密码</label><input id="reset-temporary-password" type="password" value="temporary-2026" required></div>
+        <div class="form-field"><label for="reset-temporary-password">{{ t("一次性临时密码") }}</label><input id="reset-temporary-password" type="password" value="temporary-2026" required></div>
         <p class="form-error" id="reset-password-error" role="alert"></p>
         <div class="modal-actions">
-          <button class="paper-button" type="button" data-close-dialog="reset-password-dialog">取消</button>
-          <button class="ink-button" type="submit">确认重置</button>
+          <button class="paper-button" type="button" data-close-dialog="reset-password-dialog">{{ t("取消") }}</button>
+          <button class="ink-button" type="submit">{{ t("确认重置") }}</button>
         </div>
       </form>
     </dialog>

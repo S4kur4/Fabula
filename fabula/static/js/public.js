@@ -10,6 +10,7 @@
   const lightboxStory = document.querySelector("#lightbox-story");
   const lightboxMeta = document.querySelector("#lightbox-meta");
   const lightboxThumbs = document.querySelector("#lightbox-thumbs");
+  const t = window.Fabula.t;
   let activeAlbum = "";
   let nextOffset = sentinel?.dataset.nextOffset || "";
   let loading = false;
@@ -72,7 +73,7 @@
       id: Number(card.dataset.photoId),
       title: card.dataset.photoTitle || "",
       photographer: card.dataset.photoPhotographer || "",
-      album: card.dataset.photoAlbum || "未分类",
+      album: card.dataset.photoAlbum || t("未分类"),
       image_url: card.dataset.photoImage || "",
       thumb_url: card.querySelector("img")?.src || "",
       story: card.querySelector(".photo-story-data")?.textContent.trim() || "",
@@ -91,19 +92,30 @@
     lightboxIndex = (lightboxIndex + photos.length) % photos.length;
     const photo = photos[lightboxIndex];
     lightboxImage.src = photo.image_url;
-    lightboxImage.alt = `${photo.title || "摄影作品"}，摄影师 ${photo.photographer}`;
+    lightboxImage.alt = t("{title}，摄影师 {photographer}", {
+      title: photo.title || t("摄影作品"),
+      photographer: photo.photographer,
+    });
     lightboxTitle.textContent = photo.title;
     lightboxStory.textContent = photo.story;
     lightboxTitle.hidden = !photo.title;
     lightboxStory.hidden = !photo.story;
-    lightboxMeta.textContent = `${photo.photographer} / ${photo.album} / 第 ${lightboxIndex + 1} 张，共 ${photos.length} 张`;
+    lightboxMeta.textContent = t(
+      "{photographer} / {album} / 第 {index} 张，共 {total} 张",
+      {
+        photographer: photo.photographer,
+        album: photo.album,
+        index: lightboxIndex + 1,
+        total: photos.length,
+      },
+    );
     lightboxThumbs.replaceChildren();
     photos.forEach((item, index) => {
       const button = document.createElement("button");
       const image = document.createElement("img");
       button.type = "button";
       button.classList.toggle("is-active", index === lightboxIndex);
-      button.setAttribute("aria-label", `查看第 ${index + 1} 张照片`);
+      button.setAttribute("aria-label", t("查看第 {index} 张照片", { index: index + 1 }));
       image.src = item.thumb_url;
       image.alt = "";
       button.append(image);
@@ -140,10 +152,10 @@
     if (slideshowTimer) {
       window.clearInterval(slideshowTimer);
       slideshowTimer = 0;
-      event.currentTarget.textContent = "播放";
+      event.currentTarget.textContent = t("播放");
       return;
     }
-    event.currentTarget.textContent = "暂停";
+    event.currentTarget.textContent = t("暂停");
     slideshowTimer = window.setInterval(() => {
       lightboxIndex += 1;
       renderLightbox();
@@ -153,14 +165,16 @@
   document.querySelector("[data-lightbox-thumbnails]")?.addEventListener("click", (event) => {
     lightboxThumbs.hidden = !lightboxThumbs.hidden;
     event.currentTarget.setAttribute("aria-pressed", String(!lightboxThumbs.hidden));
-    event.currentTarget.textContent = lightboxThumbs.hidden ? "显示缩略图" : "隐藏缩略图";
+    event.currentTarget.textContent = lightboxThumbs.hidden
+      ? t("显示缩略图")
+      : t("隐藏缩略图");
   });
 
   lightbox?.addEventListener("close", () => {
     if (slideshowTimer) {
       window.clearInterval(slideshowTimer);
       slideshowTimer = 0;
-      document.querySelector("[data-lightbox-slideshow]").textContent = "播放";
+      document.querySelector("[data-lightbox-slideshow]").textContent = t("播放");
     }
   });
 
@@ -190,9 +204,17 @@
     card.dataset.photoImage = photo.image_url;
     openButton.className = "photo-open";
     openButton.type = "button";
-    openButton.setAttribute("aria-label", photo.title ? `打开《${photo.title}》的照片故事` : `打开 ${photo.photographer} 的照片故事`);
+    openButton.setAttribute(
+      "aria-label",
+      photo.title
+        ? t("打开《{title}》的照片故事", { title: photo.title })
+        : t("打开 {photographer} 的照片故事", { photographer: photo.photographer }),
+    );
     image.src = photo.thumb_url;
-    image.alt = `${photo.title || "摄影作品"}，摄影师 ${photo.photographer}`;
+    image.alt = t("{title}，摄影师 {photographer}", {
+      title: photo.title || t("摄影作品"),
+      photographer: photo.photographer,
+    });
     image.loading = "lazy";
     image.width = photo.width;
     image.height = photo.height;
@@ -238,8 +260,8 @@
         const heading = document.createElement("h3");
         const note = document.createElement("p");
         empty.className = "empty-state";
-        heading.textContent = "这个摄影集还是空的";
-        note.textContent = "摄影师发布作品后，它们会出现在这里。";
+        heading.textContent = t("这个摄影集还是空的");
+        note.textContent = t("摄影师发布作品后，它们会出现在这里。");
         empty.append(heading, note);
         galleryGrid.append(empty);
       }

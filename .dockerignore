@@ -7,7 +7,7 @@ tests
 /var/*
 !/var/.gitkeep
 
-# 本地运行数据、文档与迁移副本不得进入镜像构建上下文
+# Exclude local data, documentation, and migration copies from the build context.
 /data/
 /doc/
 /designs/

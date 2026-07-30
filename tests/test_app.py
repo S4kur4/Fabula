@@ -30,6 +30,9 @@ class FabulaTestCase(unittest.TestCase):
                 "MEDIA_ROOT": self.data_root / "media",
                 "TEMP_ROOT": self.data_root / "tmp",
                 "LOGIN_MAX_ATTEMPTS": 20,
+                "TURNSTILE_SITE_KEY": "",
+                "TURNSTILE_SECRET_KEY": "",
+                "TURNSTILE_EXPECTED_HOSTNAMES": "",
             }
         )
         self.client = self.app.test_client()
@@ -294,6 +297,191 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("上传到本摄影集", html)
         self.assertIn("编辑或删除", html)
 
+    def test_language_switch_is_saved_and_keeps_custom_content_unchanged(self):
+        token = self.login("user.one", "user-password-2026")
+        chinese_page = self.client.get("/studio?tab=about")
+        chinese_html = chinese_page.get_data(as_text=True)
+        self.assertIn('<html lang="zh-CN"', chinese_html)
+        self.assertIn('action="/studio/locale"', chinese_html)
+        self.assertIn('value="en"', chinese_html)
+        self.assertIn(">English</button>", chinese_html)
+
+        response = self.client.post(
+            "/studio/locale",
+            data={
+                "csrf_token": token,
+                "locale": "en",
+                "next": "/studio?tab=about",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/studio?tab=about"))
+
+        english_page = self.client.get("/studio?tab=about")
+        english_html = english_page.get_data(as_text=True)
+        self.assertIn('<html lang="en"', english_html)
+        self.assertIn("<h1>My profile</h1>", english_html)
+        self.assertIn(">My albums<", english_html)
+        self.assertIn(">Account security<", english_html)
+        self.assertIn(">中文</button>", english_html)
+        self.assertIn("看见日常", english_html)
+        self.assertIn("只属于摄影师一的介绍", english_html)
+
+        english_token = self.csrf_from(english_page)
+        api_response = self.api(
+            "POST",
+            "/studio/api/albums",
+            english_token,
+            json={"name": ""},
+        )
+        self.assertEqual(api_response.status_code, 400)
+        self.assertEqual(
+            api_response.get_json()["message"],
+            "Album name must contain 1 to 40 characters.",
+        )
+        with self.app.app_context():
+            locale = get_db().execute(
+                "SELECT locale FROM users WHERE id = ?", (self.user_one_id,)
+            ).fetchone()["locale"]
+            self.assertEqual(locale, "en")
+
+        logout_response = self.client.post(
+            "/logout",
+            data={"csrf_token": english_token},
+        )
+        self.assertEqual(logout_response.status_code, 302)
+        logged_out_page = self.client.get("/login").get_data(as_text=True)
+        self.assertIn('<html lang="en"', logged_out_page)
+        self.assertIn(">Username<", logged_out_page)
+        self.assertIn("进入只属于你的工作台", logged_out_page)
+
+    def test_invalid_language_is_rejected_without_changing_preference(self):
+        token = self.login("user.one", "user-password-2026")
+        response = self.client.post(
+            "/studio/locale",
+            data={
+                "csrf_token": token,
+                "locale": "fr",
+                "next": "/studio",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        with self.app.app_context():
+            locale = get_db().execute(
+                "SELECT locale FROM users WHERE id = ?", (self.user_one_id,)
+            ).fetchone()["locale"]
+            self.assertEqual(locale, "zh-CN")
+
+    def test_turnstile_is_verified_server_side_before_login(self):
+        calls = []
+
+        def verifier(token, remote_ip):
+            calls.append((token, remote_ip))
+            return {
+                "success": token == "valid-token",
+                "action": "login",
+                "hostname": "TEST.LOCAL",
+            }
+
+        self.app.config.update(
+            TURNSTILE_SITE_KEY="test-site-key",
+            TURNSTILE_SECRET_KEY="test-secret-key",
+            TURNSTILE_EXPECTED_HOSTNAMES=frozenset({"test.local"}),
+            TURNSTILE_VERIFIER=verifier,
+        )
+        login_page = self.client.get("/login")
+        login_html = login_page.get_data(as_text=True)
+        token = self.csrf_from(login_page)
+        self.assertIn("https://challenges.cloudflare.com/turnstile/v0/api.js", login_html)
+        self.assertIn('class="cf-turnstile"', login_html)
+        self.assertIn('data-action="login"', login_html)
+        csp = login_page.headers["Content-Security-Policy"]
+        self.assertIn(
+            "script-src 'self' https://challenges.cloudflare.com",
+            csp,
+        )
+        self.assertIn("frame-src https://challenges.cloudflare.com", csp)
+
+        missing = self.client.post(
+            "/login",
+            data={
+                "username": "user.one",
+                "password": "user-password-2026",
+                "csrf_token": token,
+            },
+        )
+        self.assertEqual(missing.status_code, 200)
+        self.assertIn("请完成人机验证后重试。", missing.get_data(as_text=True))
+        self.assertEqual(calls, [])
+
+        rejected = self.client.post(
+            "/login",
+            data={
+                "username": "user.one",
+                "password": "user-password-2026",
+                "csrf_token": token,
+                "cf-turnstile-response": "invalid-token",
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertIn("请完成人机验证后重试。", rejected.get_data(as_text=True))
+
+        accepted = self.client.post(
+            "/login",
+            data={
+                "username": "user.one",
+                "password": "user-password-2026",
+                "csrf_token": token,
+                "cf-turnstile-response": "valid-token",
+            },
+        )
+        self.assertEqual(accepted.status_code, 302)
+        self.assertEqual(
+            calls,
+            [
+                ("invalid-token", "127.0.0.1"),
+                ("valid-token", "127.0.0.1"),
+            ],
+        )
+
+    def test_turnstile_rejects_action_and_hostname_mismatches(self):
+        responses = {
+            "wrong-action": {
+                "success": True,
+                "action": "other",
+                "hostname": "test.local",
+            },
+            "wrong-hostname": {
+                "success": True,
+                "action": "login",
+                "hostname": "attacker.example",
+            },
+        }
+        self.app.config.update(
+            TURNSTILE_SITE_KEY="test-site-key",
+            TURNSTILE_SECRET_KEY="test-secret-key",
+            TURNSTILE_EXPECTED_HOSTNAMES=frozenset({"test.local"}),
+            TURNSTILE_VERIFIER=lambda token, _remote_ip: responses[token],
+        )
+        login_page = self.client.get("/login")
+        csrf_token = self.csrf_from(login_page)
+        for turnstile_token in responses:
+            with self.subTest(turnstile_token=turnstile_token):
+                response = self.client.post(
+                    "/login",
+                    data={
+                        "username": "user.one",
+                        "password": "user-password-2026",
+                        "csrf_token": csrf_token,
+                        "cf-turnstile-response": turnstile_token,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(
+                    "请完成人机验证后重试。",
+                    response.get_data(as_text=True),
+                )
+
     def test_regular_user_cannot_access_admin_api(self):
         token = self.login("user.one", "user-password-2026")
         response = self.api("GET", "/api/admin/users", token)
@@ -422,6 +610,9 @@ class BootstrapAdminTestCase(unittest.TestCase):
                     "DATABASE_PATH": data_root / "fabula.db",
                     "MEDIA_ROOT": data_root / "media",
                     "TEMP_ROOT": data_root / "tmp",
+                    "TURNSTILE_SITE_KEY": "",
+                    "TURNSTILE_SECRET_KEY": "",
+                    "TURNSTILE_EXPECTED_HOSTNAMES": "",
                 }
             )
             with app.app_context():
@@ -432,6 +623,91 @@ class BootstrapAdminTestCase(unittest.TestCase):
                 self.assertEqual(user["must_change_password"], 1)
                 with self.assertRaises(Exception):
                     bootstrap_admin("second.admin", "第二位", "initial-password-2026")
+
+
+class ApplicationConfigurationTestCase(unittest.TestCase):
+    def app_config(self, data_root):
+        return {
+            "TESTING": True,
+            "DATA_ROOT": data_root,
+            "SECRET_KEY": "test-secret-key",
+            "DATABASE_PATH": data_root / "fabula.db",
+            "MEDIA_ROOT": data_root / "media",
+            "TEMP_ROOT": data_root / "tmp",
+            "TURNSTILE_SITE_KEY": "",
+            "TURNSTILE_SECRET_KEY": "",
+            "TURNSTILE_EXPECTED_HOSTNAMES": "",
+        }
+
+    def test_existing_database_gets_default_chinese_locale(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            database_path = data_root / "fabula.db"
+            connection = sqlite3.connect(database_path)
+            connection.executescript(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    display_name TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'photographer',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    password_hash TEXT NOT NULL,
+                    must_change_password INTEGER NOT NULL DEFAULT 1,
+                    initial_admin INTEGER NOT NULL DEFAULT 0,
+                    session_version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TEXT
+                );
+                INSERT INTO users (
+                    username, display_name, role, status, password_hash,
+                    must_change_password
+                ) VALUES (
+                    'legacy.user', '旧用户', 'photographer', 'active',
+                    'not-used-in-this-test', 0
+                );
+                """
+            )
+            connection.close()
+
+            app = create_app(self.app_config(data_root))
+            with app.app_context():
+                migrated_user = get_db().execute(
+                    "SELECT locale FROM users WHERE username = 'legacy.user'"
+                ).fetchone()
+                self.assertEqual(migrated_user["locale"], "zh-CN")
+
+    def test_turnstile_keys_must_be_configured_together(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            config = self.app_config(data_root)
+            config.update(
+                TURNSTILE_SITE_KEY="test-site-key",
+                TURNSTILE_SECRET_KEY="",
+            )
+            with self.assertRaisesRegex(RuntimeError, "must be configured together"):
+                create_app(config)
+
+    def test_turnstile_requires_expected_hostnames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            config = self.app_config(data_root)
+            config.update(
+                TURNSTILE_SITE_KEY="test-site-key",
+                TURNSTILE_SECRET_KEY="test-secret-key",
+                TURNSTILE_EXPECTED_HOSTNAMES="",
+            )
+            with self.assertRaisesRegex(RuntimeError, "EXPECTED_HOSTNAMES is required"):
+                create_app(config)
+
+    def test_turnstile_timeout_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            config = self.app_config(data_root)
+            config["TURNSTILE_TIMEOUT_SECONDS"] = 31
+            with self.assertRaisesRegex(RuntimeError, "must be between 1 and 30"):
+                create_app(config)
 
 
 if __name__ == "__main__":

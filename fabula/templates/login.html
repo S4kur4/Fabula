@@ -1,13 +1,19 @@
 {% extends "base.html" %}
-{% block title %}登录 | {{ site_copy.site_title }}{% endblock %}
+{% block title %}{{ t("登录 | {site_title}", site_title=site_copy.site_title) }}{% endblock %}
+{% block head %}
+  {% if turnstile_enabled %}
+    <link rel="preconnect" href="https://challenges.cloudflare.com">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  {% endif %}
+{% endblock %}
 {% block body_class %}login-page{% endblock %}
 {% block body %}
   <header class="site-header">
     <a class="wordmark" href="{{ url_for('public.index') }}">{{ site_copy.site_title }}</a>
     <div></div>
     <div class="header-actions">
-      <a class="header-action" href="{{ url_for('public.index') }}">作品</a>
-      <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换明暗主题">夜色</button>
+      <a class="header-action" href="{{ url_for('public.index') }}">{{ t("作品") }}</a>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="{{ t('切换明暗主题') }}">{{ t("夜色") }}</button>
     </div>
   </header>
   <main class="login-layout" id="main-content">
@@ -18,22 +24,34 @@
         <form class="login-form" method="post" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="form-field">
-            <label for="username">账号</label>
+            <label for="username">{{ t("账号") }}</label>
             <input id="username" name="username" value="{{ username }}" autocomplete="username" required autofocus>
           </div>
           <div class="form-field">
-            <label for="password">密码</label>
+            <label for="password">{{ t("密码") }}</label>
             <input id="password" name="password" type="password" autocomplete="current-password" required>
           </div>
+          {% if turnstile_enabled %}
+            <div class="turnstile-field">
+              <div
+                class="cf-turnstile"
+                data-sitekey="{{ turnstile_site_key }}"
+                data-action="login"
+                data-theme="auto"
+                data-language="{{ current_locale }}"
+                data-size="flexible"
+              ></div>
+            </div>
+          {% endif %}
           {% if error %}<p class="form-error is-visible" role="alert">{{ error }}</p>{% endif %}
-          <button class="ink-button login-submit" type="submit">登录工作台</button>
+          <button class="ink-button login-submit" type="submit">{{ t("登录工作台") }}</button>
         </form>
-        <p class="login-footnote">登录后只能管理当前账号拥有的摄影集、照片和个人介绍。</p>
+        <p class="login-footnote">{{ t("登录后只能管理当前账号拥有的摄影集、照片和个人介绍。") }}</p>
       </div>
-      <a class="text-link" href="{{ url_for('public.index') }}">返回公开作品站</a>
+      <a class="text-link" href="{{ url_for('public.index') }}">{{ t("返回公开作品站") }}</a>
     </div>
     <div class="login-image">
-      <img src="{{ url_for('static', filename='images/login.webp') }}" alt="向上仰望黑白建筑的对称线条">
+      <img src="{{ url_for('static', filename='images/login.webp') }}" alt="{{ t('向上仰望黑白建筑的对称线条') }}">
     </div>
   </main>
 {% endblock %}

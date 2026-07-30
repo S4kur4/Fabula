@@ -7,7 +7,8 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
-from . import admin, auth, cli, db, public, security, studio
+from . import admin, auth, cli, db, i18n, public, security, studio
+from .i18n import translate
 from .settings import get_site_copy
 
 
@@ -60,9 +61,54 @@ def create_app(test_config: dict | None = None) -> Flask:
         LOGIN_MAX_ATTEMPTS=int(os.environ.get("FABULA_LOGIN_MAX_ATTEMPTS", "5")),
         LOGIN_WINDOW_SECONDS=int(os.environ.get("FABULA_LOGIN_WINDOW_SECONDS", "900")),
         TRUST_PROXY_HEADERS=os.environ.get("FABULA_TRUST_PROXY_HEADERS", "false").lower() == "true",
+        TURNSTILE_SITE_KEY=os.environ.get("FABULA_TURNSTILE_SITE_KEY", "").strip(),
+        TURNSTILE_SECRET_KEY=os.environ.get("FABULA_TURNSTILE_SECRET_KEY", "").strip(),
+        TURNSTILE_EXPECTED_HOSTNAMES=os.environ.get(
+            "FABULA_TURNSTILE_EXPECTED_HOSTNAMES", ""
+        ),
+        TURNSTILE_ACTION="login",
+        TURNSTILE_TIMEOUT_SECONDS=float(
+            os.environ.get("FABULA_TURNSTILE_TIMEOUT_SECONDS", "5")
+        ),
+        TURNSTILE_VERIFIER=None,
     )
     if test_config:
         app.config.update(test_config)
+
+    turnstile_site_key = str(app.config["TURNSTILE_SITE_KEY"]).strip()
+    turnstile_secret_key = str(app.config["TURNSTILE_SECRET_KEY"]).strip()
+    if bool(turnstile_site_key) != bool(turnstile_secret_key):
+        raise RuntimeError(
+            "FABULA_TURNSTILE_SITE_KEY and FABULA_TURNSTILE_SECRET_KEY must be configured together"
+        )
+    turnstile_timeout = float(app.config["TURNSTILE_TIMEOUT_SECONDS"])
+    if not 1 <= turnstile_timeout <= 30:
+        raise RuntimeError(
+            "FABULA_TURNSTILE_TIMEOUT_SECONDS must be between 1 and 30"
+        )
+    expected_hostnames = app.config["TURNSTILE_EXPECTED_HOSTNAMES"]
+    if isinstance(expected_hostnames, str):
+        expected_hostnames = {
+            hostname.strip().lower()
+            for hostname in expected_hostnames.split(",")
+            if hostname.strip()
+        }
+    else:
+        expected_hostnames = {
+            str(hostname).strip().lower()
+            for hostname in expected_hostnames
+            if str(hostname).strip()
+        }
+    if turnstile_site_key and not expected_hostnames:
+        raise RuntimeError(
+            "FABULA_TURNSTILE_EXPECTED_HOSTNAMES is required when Turnstile is enabled"
+        )
+    app.config.update(
+        TURNSTILE_SITE_KEY=turnstile_site_key,
+        TURNSTILE_SECRET_KEY=turnstile_secret_key,
+        TURNSTILE_EXPECTED_HOSTNAMES=frozenset(expected_hostnames),
+        TURNSTILE_TIMEOUT_SECONDS=turnstile_timeout,
+    )
 
     for directory in (
         Path(app.config["DATABASE_PATH"]).parent,
@@ -74,6 +120,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     db.init_app(app)
     security.init_app(app)
+    i18n.init_app(app)
     cli.init_app(app)
     app.register_blueprint(public.bp)
     app.register_blueprint(auth.bp)
@@ -91,25 +138,37 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.errorhandler(400)
     def bad_request(_error):
         if request.path.startswith("/api/"):
-            return jsonify({"success": False, "message": "请求无效"}), 400
-        return render_template("error.html", code=400, message="请求无法完成。"), 400
+            return jsonify({"success": False, "message": translate("请求无效")}), 400
+        return render_template(
+            "error.html", code=400, message=translate("请求无法完成。")
+        ), 400
 
     @app.errorhandler(403)
     def forbidden(_error):
         if request.path.startswith("/api/"):
-            return jsonify({"success": False, "message": "没有执行此操作的权限"}), 403
-        return render_template("error.html", code=403, message="你没有访问这个页面的权限。"), 403
+            return jsonify(
+                {"success": False, "message": translate("没有执行此操作的权限")}
+            ), 403
+        return render_template(
+            "error.html", code=403, message=translate("你没有访问这个页面的权限。")
+        ), 403
 
     @app.errorhandler(404)
     def not_found(_error):
         if request.path.startswith("/api/"):
-            return jsonify({"success": False, "message": "内容不存在"}), 404
-        return render_template("error.html", code=404, message="没有找到这个页面。"), 404
+            return jsonify({"success": False, "message": translate("内容不存在")}), 404
+        return render_template(
+            "error.html", code=404, message=translate("没有找到这个页面。")
+        ), 404
 
     @app.errorhandler(413)
     def too_large(_error):
         if request.path.startswith("/api/"):
-            return jsonify({"success": False, "message": "图片超过上传大小限制"}), 413
-        return render_template("error.html", code=413, message="上传文件超过大小限制。"), 413
+            return jsonify(
+                {"success": False, "message": translate("图片超过上传大小限制")}
+            ), 413
+        return render_template(
+            "error.html", code=413, message=translate("上传文件超过大小限制。")
+        ), 413
 
     return app

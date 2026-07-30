@@ -15,6 +15,7 @@ from flask import (
 )
 
 from .db import get_db
+from .i18n import translate
 from .media import STORAGE_PATTERN
 from .settings import get_site_copy
 
@@ -30,7 +31,7 @@ def serialize_photo(row) -> dict:
         "photographer": row["photographer"],
         "owner_id": row["user_id"],
         "album_id": row["album_id"],
-        "album": row["album_name"] or "未分类",
+        "album": row["album_name"] or translate("未分类"),
         "width": row["width"],
         "height": row["height"],
         "image_url": url_for("public.media_file", variant="original", storage_name=row["storage_name"]),

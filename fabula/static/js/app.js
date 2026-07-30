@@ -4,7 +4,23 @@
   const root = document.documentElement;
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
   const toast = document.querySelector("#toast");
+  const catalogElement = document.querySelector("#fabula-i18n");
+  let catalog = {};
   let toastTimer = 0;
+
+  try {
+    catalog = JSON.parse(catalogElement?.textContent || "{}");
+  } catch {
+    catalog = {};
+  }
+
+  function t(message, values = {}) {
+    const translated = catalog[message] || message;
+    return Object.entries(values).reduce(
+      (result, [key, value]) => result.replaceAll(`{${key}}`, String(value)),
+      translated,
+    );
+  }
 
   function preferredTheme() {
     const stored = window.localStorage.getItem("fabula-theme");
@@ -17,7 +33,7 @@
   function applyTheme(theme) {
     root.dataset.theme = theme;
     document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
-      button.textContent = theme === "dark" ? "晨光" : "夜色";
+      button.textContent = theme === "dark" ? t("晨光") : t("夜色");
       button.setAttribute("aria-pressed", String(theme === "dark"));
     });
   }
@@ -52,10 +68,10 @@
     const response = await window.fetch(url, requestOptions);
     const payload = await response.json().catch(() => ({
       success: false,
-      message: "服务器返回了无法识别的响应",
+      message: t("服务器返回了无法识别的响应"),
     }));
     if (!response.ok) {
-      const error = new Error(payload.message || "请求未能完成");
+      const error = new Error(payload.message || t("请求未能完成"));
       error.status = response.status;
       error.payload = payload;
       throw error;
@@ -152,5 +168,6 @@
     openDialog,
     noticeAfterReload,
     showToast,
+    t,
   };
 })();
