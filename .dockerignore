@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+tests
+/var/*
+!/var/.gitkeep
+
+# 本地运行数据、文档与迁移副本不得进入镜像构建上下文
+/data/
+/doc/
+/designs/
+/static/
+/v2/

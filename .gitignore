@@ -1,0 +1,24 @@
+# 本地配置和密钥
+.env
+.env.*
+!.env.example
+
+# Python 本地环境与缓存
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# 运行时数据
+/var/*
+!/var/.gitkeep
+/data/
+/static/photos/
+
+# 不进入代码仓库的本地文档与设计稿
+/doc/
+/designs/
+
+# 迁移完成后应不存在；防止迁移副本被误提交
+/v2/

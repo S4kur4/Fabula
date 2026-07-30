@@ -1,0 +1,26 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5002:5000"
+    environment:
+      FABULA_DATA_DIR: /app/var
+      FABULA_SECURE_COOKIE: ${FABULA_SECURE_COOKIE:-false}
+      FABULA_TRUST_PROXY_HEADERS: ${FABULA_TRUST_PROXY_HEADERS:-false}
+      FABULA_MAX_UPLOAD_MB: ${FABULA_MAX_UPLOAD_MB:-25}
+    volumes:
+      - ./var:/app/var
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
