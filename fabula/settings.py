@@ -5,6 +5,9 @@ import json
 from .db import get_db
 
 
+DEFAULT_SITE_PALETTE = "cinnabar"
+SITE_PALETTES = frozenset({"cinnabar", "celadon", "indigo", "lotus"})
+
 SITE_COPY_DEFAULTS = {
     "site_title": "Fabula",
     "hero_before": "光停下来，",
@@ -36,20 +39,36 @@ SITE_COPY_LIMITS = {
 }
 
 
+def normalize_site_palette(value: object) -> str:
+    palette = str(value or "").strip()
+    return palette if palette in SITE_PALETTES else DEFAULT_SITE_PALETTE
+
+
+def default_site_copy() -> dict:
+    return {
+        **SITE_COPY_DEFAULTS,
+        "color_scheme": DEFAULT_SITE_PALETTE,
+    }
+
+
 def get_site_copy() -> dict:
     row = get_db().execute(
         "SELECT value FROM site_settings WHERE key = 'site_copy'"
     ).fetchone()
     if row is None:
-        return dict(SITE_COPY_DEFAULTS)
+        return default_site_copy()
     try:
         stored = json.loads(row["value"])
     except (TypeError, json.JSONDecodeError):
-        return dict(SITE_COPY_DEFAULTS)
-    return {
+        return default_site_copy()
+    if not isinstance(stored, dict):
+        return default_site_copy()
+    site_copy = {
         key: str(stored.get(key, default))
         for key, default in SITE_COPY_DEFAULTS.items()
     }
+    site_copy["color_scheme"] = normalize_site_palette(stored.get("color_scheme"))
+    return site_copy
 
 
 def save_site_copy(values: dict) -> dict:
@@ -57,6 +76,7 @@ def save_site_copy(values: dict) -> dict:
         key: str(values.get(key, default)).strip()[: SITE_COPY_LIMITS[key]] or default
         for key, default in SITE_COPY_DEFAULTS.items()
     }
+    cleaned["color_scheme"] = normalize_site_palette(values.get("color_scheme"))
     get_db().execute(
         """
         INSERT INTO site_settings (key, value)

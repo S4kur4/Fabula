@@ -135,6 +135,7 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn("只属于摄影师一的介绍", html)
         self.assertIn("登录", html)
         self.assertIn('rel="icon"', html)
+        self.assertIn('data-palette="cinnabar"', html)
         self.assertNotIn("共同影像档案", html)
         self.assertNotIn("data-lightbox-fullscreen", html)
 
@@ -545,18 +546,37 @@ class FabulaTestCase(unittest.TestCase):
                 "site_title": "浮光",
                 "hero_before": "光落在这里，",
                 "hero_accent": "时间",
+                "color_scheme": "celadon",
             },
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["site_copy"]["site_title"], "浮光")
         self.assertEqual(response.get_json()["site_copy"]["hero_accent"], "时间")
+        self.assertEqual(response.get_json()["site_copy"]["color_scheme"], "celadon")
         public_page = self.client.get("/")
         public_html = public_page.get_data(as_text=True)
         self.assertIn("光落在这里", public_html)
         self.assertIn("<title>浮光</title>", public_html)
+        self.assertIn('data-palette="celadon"', public_html)
         studio_html = self.client.get("/studio?tab=site-copy").get_data(as_text=True)
-        self.assertIn("<h1>站点文案</h1>", studio_html)
+        self.assertIn("<h1>站点设置</h1>", studio_html)
+        self.assertIn('name="site-color-scheme"', studio_html)
+        self.assertIn('value="celadon" checked', studio_html)
         self.assertIn("<h1>用户管理</h1>", studio_html)
+
+    def test_admin_cannot_save_an_unknown_site_palette(self):
+        token = self.login("admin.user", "admin-password-2026")
+        response = self.api(
+            "PUT",
+            "/api/admin/site-copy",
+            token,
+            json={"color_scheme": "untrusted-css-value"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["message"], "站点配色方案无效")
+        public_html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('data-palette="cinnabar"', public_html)
+        self.assertNotIn("untrusted-css-value", public_html)
 
     def test_unsafe_request_without_csrf_is_rejected(self):
         self.login("user.one", "user-password-2026")

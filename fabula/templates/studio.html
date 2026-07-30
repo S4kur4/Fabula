@@ -58,7 +58,7 @@
           <button type="button" data-studio-tab="security">{{ t("账户安全") }}</button>
           {% if current_user.role == "admin" and not current_user.must_change_password %}
             <span class="studio-nav-label">{{ t("站点治理") }}</span>
-            <button type="button" data-studio-tab="site-copy">{{ t("站点文案") }}</button>
+            <button type="button" data-studio-tab="site-copy">{{ t("站点设置") }}</button>
             <button type="button" data-studio-tab="users">{{ t("用户管理") }}</button>
           {% endif %}
         </nav>
@@ -250,7 +250,7 @@
           <section class="studio-panel" data-studio-panel="site-copy">
             <header class="studio-titlebar">
               <div>
-                <h1>{{ t("站点文案") }}</h1>
+                <h1>{{ t("站点设置") }}</h1>
               </div>
             </header>
             <div class="site-copy-layout">
@@ -264,6 +264,44 @@
                 </div>
               </aside>
               <form class="workbench-form" id="site-copy-form">
+                <fieldset class="palette-fieldset">
+                  <legend>{{ t("站点配色") }}</legend>
+                  <p>{{ t("选择一套配色，浅色与深色模式会同时更新。") }}</p>
+                  <div class="palette-options">
+                    <label class="palette-option">
+                      <input type="radio" name="site-color-scheme" value="cinnabar" {{ "checked" if site_copy.color_scheme == "cinnabar" }}>
+                      <span class="palette-option-content" data-palette-preview="cinnabar">
+                        <span class="palette-swatch" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                        <strong>{{ t("宣纸朱砂") }}</strong>
+                        <small>{{ t("暖灰宣纸与克制朱砂，温润而清醒。") }}</small>
+                      </span>
+                    </label>
+                    <label class="palette-option">
+                      <input type="radio" name="site-color-scheme" value="celadon" {{ "checked" if site_copy.color_scheme == "celadon" }}>
+                      <span class="palette-option-content" data-palette-preview="celadon">
+                        <span class="palette-swatch" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                        <strong>{{ t("雨过天青") }}</strong>
+                        <small>{{ t("雾白与低饱和青色，像雨后瓷面。") }}</small>
+                      </span>
+                    </label>
+                    <label class="palette-option">
+                      <input type="radio" name="site-color-scheme" value="indigo" {{ "checked" if site_copy.color_scheme == "indigo" }}>
+                      <span class="palette-option-content" data-palette-preview="indigo">
+                        <span class="palette-swatch" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                        <strong>{{ t("松烟黛青") }}</strong>
+                        <small>{{ t("烟灰与深黛蓝，安静且有层次。") }}</small>
+                      </span>
+                    </label>
+                    <label class="palette-option">
+                      <input type="radio" name="site-color-scheme" value="lotus" {{ "checked" if site_copy.color_scheme == "lotus" }}>
+                      <span class="palette-option-content" data-palette-preview="lotus">
+                        <span class="palette-swatch" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                        <strong>{{ t("藕荷秋霁") }}</strong>
+                        <small>{{ t("浅藕灰与暮色紫，柔和但不甜腻。") }}</small>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
                 <div class="form-grid">
                   <div class="form-field is-wide"><label for="copy-site-title">{{ t("网站主标题") }}</label><input id="copy-site-title" value="{{ site_copy.site_title }}" maxlength="40" required></div>
                   <div class="form-field"><label for="copy-hero-before">{{ t("首页标题前段") }}</label><input id="copy-hero-before" value="{{ site_copy.hero_before }}" required></div>
@@ -279,7 +317,7 @@
                   <div class="form-field is-wide"><label for="copy-login-intro">{{ t("登录页简介") }}</label><textarea id="copy-login-intro" required>{{ site_copy.login_intro }}</textarea></div>
                 </div>
                 <p class="form-error" id="site-copy-error" role="alert"></p>
-                <button class="ink-button" type="submit">{{ t("保存站点文案") }}</button>
+                <button class="ink-button" type="submit">{{ t("保存站点设置") }}</button>
               </form>
             </div>
           </section>
@@ -390,7 +428,7 @@
           </div>
           <div class="form-field" id="temporary-password-field"><label for="user-temporary-password">{{ t("一次性临时密码") }}</label><input id="user-temporary-password" type="password" value="welcome-2026"></div>
         </div>
-        <p class="role-impact">{{ t("管理员可以治理用户与站点文案，但不会获得其他摄影师内容的编辑权。") }}</p>
+        <p class="role-impact">{{ t("管理员可以治理用户与站点设置，但不会获得其他摄影师内容的编辑权。") }}</p>
         <p class="form-error" id="user-error" role="alert"></p>
         <div class="modal-actions">
           <button class="paper-button" type="button" data-close-dialog="user-dialog">{{ t("取消") }}</button>

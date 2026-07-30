@@ -688,10 +688,14 @@
   ];
 
   function siteCopyValues() {
-    return Object.fromEntries(copyFields.map((name) => [
+    const values = Object.fromEntries(copyFields.map((name) => [
       name.replaceAll("-", "_"),
       document.querySelector(`#copy-${name}`).value,
     ]));
+    values.color_scheme = document.querySelector(
+      'input[name="site-color-scheme"]:checked',
+    )?.value || document.documentElement.dataset.palette;
+    return values;
   }
 
   function updateCopyPreview() {
@@ -712,10 +716,15 @@
   }
 
   copyFields.forEach((name) => document.querySelector(`#copy-${name}`)?.addEventListener("input", updateCopyPreview));
+  document.querySelectorAll('input[name="site-color-scheme"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      document.documentElement.dataset.palette = input.value;
+    });
+  });
   document.querySelector("#site-copy-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      await window.Fabula.api("/api/admin/site-copy", {
+      const payload = await window.Fabula.api("/api/admin/site-copy", {
         method: "PUT",
         body: jsonBody(siteCopyValues()),
       });
@@ -723,7 +732,8 @@
       const siteTitle = document.querySelector("#copy-site-title").value.trim();
       document.querySelector(".studio-brand strong").textContent = siteTitle;
       document.title = `${t("工作台")} | ${siteTitle}`;
-      window.Fabula.showToast(t("站点文案已保存"));
+      document.documentElement.dataset.palette = payload.site_copy.color_scheme;
+      window.Fabula.showToast(t("站点设置已保存"));
     } catch (error) {
       errorText(document.querySelector("#site-copy-error"), error.message);
     }

@@ -128,8 +128,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(admin.bp)
 
     @app.context_processor
-    def inject_brand_title():
-        return {"brand_title": get_site_copy()["site_title"]}
+    def inject_site_context():
+        site_copy = get_site_copy()
+        return {
+            "brand_title": site_copy["site_title"],
+            "site_palette": site_copy["color_scheme"],
+        }
 
     @app.get("/healthz")
     def healthz():

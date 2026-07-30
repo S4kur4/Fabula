@@ -13,7 +13,7 @@ from .security import (
     valid_password,
     valid_username,
 )
-from .settings import get_site_copy, save_site_copy
+from .settings import SITE_PALETTES, get_site_copy, save_site_copy
 
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -266,10 +266,26 @@ def delete_user(user_id: int):
 @bp.put("/site-copy")
 @admin_required
 def update_site_copy():
-    values = request.get_json(silent=True) or {}
+    values = request.get_json(silent=True)
+    if not isinstance(values, dict):
+        return api_error(translate("请求无效"))
+    previous = get_site_copy()
+    requested_palette = str(
+        values.get("color_scheme", previous["color_scheme"])
+    ).strip()
+    if requested_palette not in SITE_PALETTES:
+        return api_error(translate("站点配色方案无效"))
+    values = {**values, "color_scheme": requested_palette}
     connection = get_db()
     saved = save_site_copy(values)
-    audit("site_copy.updated", details={"fields": sorted(saved)})
+    audit(
+        "site_copy.updated",
+        details={
+            "fields": sorted(saved),
+            "old_color_scheme": previous["color_scheme"],
+            "new_color_scheme": saved["color_scheme"],
+        },
+    )
     connection.commit()
     return jsonify({"success": True, "site_copy": saved})
 
