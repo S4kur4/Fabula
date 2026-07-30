@@ -41,6 +41,14 @@ flask --app wsgi run --port 5002
 
 `bootstrap-admin` 只允许在用户表为空时执行。创建出的首位管理员首次登录后必须修改临时密码。
 
+如果管理员忘记密码，可通过交互式命令设置一次性临时密码：
+
+```bash
+flask --app wsgi reset-admin-password
+```
+
+命令会隐藏密码输入、撤销该管理员的现有会话、写入审计事件，并要求管理员下次登录后立即更换临时密码。为避免绕过账号治理流程，命令不会重置普通用户，也不会恢复已停用的管理员账号。
+
 如果只想查看带图片和多角色账号的演示：
 
 ```bash
@@ -62,6 +70,18 @@ cp .env.example .env
 docker compose build
 docker compose run --rm web flask --app wsgi bootstrap-admin
 docker compose up -d
+```
+
+容器运行后，可使用以下命令重置管理员密码：
+
+```bash
+docker compose exec web flask --app wsgi reset-admin-password
+```
+
+如果 Web 容器尚未启动，则使用：
+
+```bash
+docker compose run --rm web flask --app wsgi reset-admin-password
 ```
 
 默认只监听宿主机 `127.0.0.1:5002`。生产环境建议在前方配置 HTTPS 反向代理，并设置：

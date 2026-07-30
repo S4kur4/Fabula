@@ -7,7 +7,7 @@ import unittest
 from io import BytesIO
 from pathlib import Path
 
-from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from fabula import create_app
 from fabula.cli import bootstrap_admin
@@ -643,6 +643,107 @@ class BootstrapAdminTestCase(unittest.TestCase):
                 self.assertEqual(user["must_change_password"], 1)
                 with self.assertRaises(Exception):
                     bootstrap_admin("second.admin", "第二位", "initial-password-2026")
+
+
+class ResetAdminPasswordCliTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.data_root = Path(self.temporary_directory.name)
+        self.app = create_app(
+            {
+                "TESTING": True,
+                "DATA_ROOT": self.data_root,
+                "SECRET_KEY": "test-secret-key",
+                "DATABASE_PATH": self.data_root / "fabula.db",
+                "MEDIA_ROOT": self.data_root / "media",
+                "TEMP_ROOT": self.data_root / "tmp",
+                "TURNSTILE_SITE_KEY": "",
+                "TURNSTILE_SECRET_KEY": "",
+                "TURNSTILE_EXPECTED_HOSTNAMES": "",
+            }
+        )
+        with self.app.app_context():
+            bootstrap_admin(
+                "first.admin",
+                "首位管理员",
+                "initial-password-2026",
+            )
+            get_db().execute(
+                "UPDATE users SET must_change_password = 0 WHERE username = 'first.admin'"
+            )
+            get_db().commit()
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_reset_admin_password_revokes_sessions_and_writes_audit_event(self):
+        new_password = "replacement-password-2026"
+        result = self.app.test_cli_runner().invoke(
+            args=["reset-admin-password", "--username", "FIRST.ADMIN"],
+            input=f"{new_password}\n{new_password}\n",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn(new_password, result.output)
+        self.assertIn("现有会话已撤销", result.output)
+        with self.app.app_context():
+            connection = get_db()
+            admin = connection.execute(
+                "SELECT * FROM users WHERE username = 'first.admin'"
+            ).fetchone()
+            event = connection.execute(
+                """
+                SELECT actor_user_id, target_user_id, action, details_json
+                FROM audit_events
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+            self.assertTrue(check_password_hash(admin["password_hash"], new_password))
+            self.assertFalse(
+                check_password_hash(
+                    admin["password_hash"],
+                    "initial-password-2026",
+                )
+            )
+            self.assertEqual(admin["must_change_password"], 1)
+            self.assertEqual(admin["session_version"], 2)
+            self.assertIsNone(event["actor_user_id"])
+            self.assertEqual(event["target_user_id"], admin["id"])
+            self.assertEqual(event["action"], "user.password_reset")
+            self.assertEqual(event["details_json"], '{"source": "cli-recovery"}')
+
+    def test_reset_admin_password_refuses_inactive_admin(self):
+        with self.app.app_context():
+            connection = get_db()
+            original_hash = connection.execute(
+                "SELECT password_hash FROM users WHERE username = 'first.admin'"
+            ).fetchone()["password_hash"]
+            connection.execute(
+                "UPDATE users SET status = 'inactive' WHERE username = 'first.admin'"
+            )
+            connection.commit()
+
+        result = self.app.test_cli_runner().invoke(
+            args=["reset-admin-password", "--username", "first.admin"],
+            input="replacement-password-2026\nreplacement-password-2026\n",
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("管理员账号已停用", result.output)
+        with self.app.app_context():
+            connection = get_db()
+            admin = connection.execute(
+                "SELECT password_hash, session_version FROM users "
+                "WHERE username = 'first.admin'"
+            ).fetchone()
+            event_count = connection.execute(
+                "SELECT COUNT(*) FROM audit_events"
+            ).fetchone()[0]
+            self.assertEqual(admin["password_hash"], original_hash)
+            self.assertEqual(admin["session_version"], 1)
+            self.assertEqual(event_count, 0)
 
 
 class ApplicationConfigurationTestCase(unittest.TestCase):

@@ -5,11 +5,12 @@ from pathlib import Path
 
 import click
 from flask import current_app
+from flask.cli import with_appcontext
 from werkzeug.security import generate_password_hash
 
 from .db import get_db, init_db
 from .media import process_image
-from .security import valid_password, valid_username
+from .security import audit, valid_password, valid_username
 from .settings import save_site_copy
 
 
@@ -82,7 +83,52 @@ def bootstrap_admin(username: str, display_name: str, password: str) -> None:
     connection.commit()
 
 
+def reset_admin_password(username: str, password: str) -> None:
+    username = username.strip()
+    if not valid_username(username):
+        raise click.ClickException("管理员用户名格式无效")
+    if not valid_password(password):
+        raise click.ClickException("密码至少 12 个字符，并同时包含字母和数字")
+
+    connection = get_db()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        admin = connection.execute(
+            """
+            SELECT id, status
+            FROM users
+            WHERE username = ? COLLATE NOCASE AND role = 'admin'
+            """,
+            (username,),
+        ).fetchone()
+        if admin is None:
+            raise click.ClickException("管理员账号不存在")
+        if admin["status"] == "inactive":
+            raise click.ClickException("管理员账号已停用，请先通过独立治理流程恢复账号")
+
+        connection.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, must_change_password = 1,
+                session_version = session_version + 1,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?
+            """,
+            (generate_password_hash(password), admin["id"]),
+        )
+        audit(
+            "user.password_reset",
+            target_user_id=admin["id"],
+            details={"source": "cli-recovery"},
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
 @click.command("init-db")
+@with_appcontext
 def init_db_command():
     init_db()
     click.echo("数据库结构已初始化。")
@@ -92,12 +138,27 @@ def init_db_command():
 @click.option("--username", prompt="管理员用户名")
 @click.option("--display-name", prompt="公开显示名称")
 @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True)
+@with_appcontext
 def bootstrap_admin_command(username: str, display_name: str, password: str):
     bootstrap_admin(username, display_name, password)
     click.echo("首位管理员已创建，首次登录后必须更换密码。")
 
 
+@click.command("reset-admin-password")
+@click.option("--username", prompt="管理员用户名")
+@with_appcontext
+def reset_admin_password_command(username: str):
+    password = click.prompt(
+        "新临时密码",
+        hide_input=True,
+        confirmation_prompt=True,
+    )
+    reset_admin_password(username, password)
+    click.echo("管理员密码已重置，现有会话已撤销；下次登录必须更换临时密码。")
+
+
 @click.command("seed-demo")
+@with_appcontext
 def seed_demo_command():
     connection = get_db()
     if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
@@ -189,4 +250,5 @@ def seed_demo_command():
 def init_app(app) -> None:
     app.cli.add_command(init_db_command)
     app.cli.add_command(bootstrap_admin_command)
+    app.cli.add_command(reset_admin_password_command)
     app.cli.add_command(seed_demo_command)
