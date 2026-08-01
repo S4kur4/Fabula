@@ -56,6 +56,7 @@ def serialize_photo(row) -> dict:
         "story": row["story"],
         "original_name": row["original_name"],
         "album_id": row["album_id"],
+        "album_position": row["album_position"],
         "album_name": row["album_name"] or translate("未分类"),
         "status": row["status"],
         "width": row["width"],
@@ -72,6 +73,50 @@ def serialize_photo(row) -> dict:
             else None
         ),
     }
+
+
+def next_album_position(album_id: int, user_id: int) -> int:
+    connection = get_db()
+    row = connection.execute(
+        """
+        SELECT COALESCE(MAX(album_position), -1) + 1
+        FROM photos
+        WHERE album_id = ? AND user_id = ?
+        """,
+        (album_id, user_id),
+    ).fetchone()
+    position = int(row[0])
+    missing = connection.execute(
+        """
+        SELECT id
+        FROM photos
+        WHERE album_id = ? AND user_id = ? AND album_position IS NULL
+        ORDER BY created_at DESC, id DESC
+        """,
+        (album_id, user_id),
+    ).fetchall()
+    for photo in missing:
+        connection.execute(
+            "UPDATE photos SET album_position = ? WHERE id = ?",
+            (position, photo["id"]),
+        )
+        position += 1
+    return position
+
+
+def ordered_album_photos(album_id: int, user_id: int) -> list[dict]:
+    rows = get_db().execute(
+        """
+        SELECT p.*, a.name AS album_name
+        FROM photos p
+        JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
+        WHERE p.album_id = ? AND p.user_id = ?
+        ORDER BY CASE WHEN p.album_position IS NULL THEN 1 ELSE 0 END,
+                 p.album_position, p.created_at DESC, p.id DESC
+        """,
+        (album_id, user_id),
+    ).fetchall()
+    return [serialize_photo(row) for row in rows]
 
 
 def studio_photos(user_id: int, limit: int = 24, offset: int = 0) -> list[dict]:
@@ -254,6 +299,77 @@ def rename_album(album_id: int):
     return jsonify({"success": True, "message": translate("摄影集已重命名")})
 
 
+@bp.get("/api/albums/<int:album_id>/order")
+@password_ready
+def read_album_order(album_id: int):
+    album = get_db().execute(
+        "SELECT id, name FROM albums WHERE id = ? AND user_id = ?",
+        (album_id, g.user["id"]),
+    ).fetchone()
+    if album is None:
+        return api_error(translate("摄影集不存在或不属于当前用户"), 404)
+    return jsonify(
+        {
+            "album": {"id": album["id"], "name": album["name"]},
+            "items": ordered_album_photos(album_id, g.user["id"]),
+        }
+    )
+
+
+@bp.put("/api/albums/<int:album_id>/order")
+@password_ready
+def update_album_order(album_id: int):
+    values = request.get_json(silent=True) or {}
+    photo_ids = values.get("photo_ids")
+    if not isinstance(photo_ids, list) or len(photo_ids) > 5000:
+        return api_error(translate("照片顺序无效"))
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in photo_ids):
+        return api_error(translate("照片顺序无效"))
+    if len(set(photo_ids)) != len(photo_ids):
+        return api_error(translate("照片顺序无效"))
+
+    connection = get_db()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        album = connection.execute(
+            "SELECT id FROM albums WHERE id = ? AND user_id = ?",
+            (album_id, g.user["id"]),
+        ).fetchone()
+        if album is None:
+            connection.rollback()
+            return api_error(translate("摄影集不存在或不属于当前用户"), 404)
+        current_ids = {
+            row["id"]
+            for row in connection.execute(
+                "SELECT id FROM photos WHERE album_id = ? AND user_id = ?",
+                (album_id, g.user["id"]),
+            ).fetchall()
+        }
+        if current_ids != set(photo_ids):
+            connection.rollback()
+            return api_error(
+                translate("摄影集内容已发生变化，请重新打开排序面板"),
+                409,
+            )
+        connection.executemany(
+            """
+            UPDATE photos
+            SET album_position = ?,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ? AND album_id = ? AND user_id = ?
+            """,
+            [
+                (position, photo_id, album_id, g.user["id"])
+                for position, photo_id in enumerate(photo_ids)
+            ],
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return jsonify({"success": True, "message": translate("照片顺序已保存")})
+
+
 @bp.delete("/api/albums/<int:album_id>")
 @password_ready
 def delete_album(album_id: int):
@@ -278,7 +394,11 @@ def delete_album(album_id: int):
         )
     else:
         connection.execute(
-            "UPDATE photos SET album_id = NULL WHERE album_id = ? AND user_id = ?",
+            """
+            UPDATE photos
+            SET album_id = NULL, album_position = NULL
+            WHERE album_id = ? AND user_id = ?
+            """,
             (album_id, g.user["id"]),
         )
     connection.execute(
@@ -336,16 +456,27 @@ def upload_photo():
     title = Path(original_name).stem[:80]
     connection = get_db()
     try:
+        connection.execute("BEGIN IMMEDIATE")
+        if album_id is not None and owned_album(album_id) is None:
+            connection.rollback()
+            delete_media(processed["storage_name"])
+            return api_error(translate("不能向其他用户的摄影集上传照片"), 403)
+        album_position = (
+            next_album_position(album_id, g.user["id"])
+            if album_id is not None
+            else None
+        )
         cursor = connection.execute(
             """
             INSERT INTO photos (
-                user_id, album_id, storage_name, original_name, title,
+                user_id, album_id, album_position, storage_name, original_name, title,
                 status, mime_type, width, height, size_bytes
-            ) VALUES (?, ?, ?, ?, ?, 'ready', 'image/webp', ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, 'ready', 'image/webp', ?, ?, ?)
             """,
             (
                 g.user["id"],
                 album_id,
+                album_position,
                 processed["storage_name"],
                 original_name,
                 title,
@@ -385,21 +516,38 @@ def update_photo(photo_id: int):
             album_id = int(album_id)
         except (TypeError, ValueError):
             return api_error(translate("摄影集无效"))
-        if owned_album(album_id) is None:
-            return api_error(translate("不能把照片加入其他用户的摄影集"), 403)
     connection = get_db()
-    cursor = connection.execute(
-        """
-        UPDATE photos
-        SET title = ?, story = ?, album_id = ?,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ? AND user_id = ?
-        """,
-        (title, story, album_id, photo_id, g.user["id"]),
-    )
-    if cursor.rowcount != 1:
-        return api_error(translate("照片不存在或不属于当前用户"), 404)
-    connection.commit()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        photo = connection.execute(
+            "SELECT album_id, album_position FROM photos WHERE id = ? AND user_id = ?",
+            (photo_id, g.user["id"]),
+        ).fetchone()
+        if photo is None:
+            connection.rollback()
+            return api_error(translate("照片不存在或不属于当前用户"), 404)
+        if album_id is not None and owned_album(album_id) is None:
+            connection.rollback()
+            return api_error(translate("不能把照片加入其他用户的摄影集"), 403)
+        if album_id is None:
+            album_position = None
+        elif album_id != photo["album_id"] or photo["album_position"] is None:
+            album_position = next_album_position(album_id, g.user["id"])
+        else:
+            album_position = photo["album_position"]
+        connection.execute(
+            """
+            UPDATE photos
+            SET title = ?, story = ?, album_id = ?, album_position = ?,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ? AND user_id = ?
+            """,
+            (title, story, album_id, album_position, photo_id, g.user["id"]),
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     return jsonify({"success": True, "message": translate("照片内容已更新")})
 
 

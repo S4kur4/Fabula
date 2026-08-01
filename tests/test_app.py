@@ -145,6 +145,8 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn('rel="icon"', html)
         self.assertIn('data-palette="cinnabar"', html)
         self.assertNotIn("共同影像档案", html)
+        self.assertEqual(html.count("影像版权归各自摄影师所有"), 2)
+        self.assertNotIn("每一种声音都保留自己的方向", html)
         self.assertNotIn("data-lightbox-fullscreen", html)
 
     def test_login_image_caption_is_removed_but_configurable_intro_remains(self):
@@ -212,6 +214,35 @@ class FabulaTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_new_album_photo_is_appended_after_existing_photos(self):
+        token = self.login("user.one", "user-password-2026")
+        response = self.api(
+            "POST",
+            "/studio/api/photos",
+            token,
+            data={
+                "album_id": str(self.album_one_id),
+                "photo": (self.image_stream(), "new-photo.jpg"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        uploaded_id = response.get_json()["photo"]["id"]
+        with self.app.app_context():
+            rows = get_db().execute(
+                """
+                SELECT id, album_position
+                FROM photos
+                WHERE album_id = ? AND user_id = ?
+                ORDER BY album_position
+                """,
+                (self.album_one_id, self.user_one_id),
+            ).fetchall()
+            self.assertEqual(
+                [(row["id"], row["album_position"]) for row in rows],
+                [(self.photo_one_id, 0), (uploaded_id, 1)],
+            )
+
     def test_database_also_rejects_cross_owner_album_relation(self):
         with self.app.app_context():
             connection = get_db()
@@ -242,11 +273,13 @@ class FabulaTestCase(unittest.TestCase):
                 "SELECT id FROM albums WHERE id = ?", (self.album_one_id,)
             ).fetchone()
             photo = connection.execute(
-                "SELECT album_id FROM photos WHERE id = ?", (self.photo_one_id,)
+                "SELECT album_id, album_position FROM photos WHERE id = ?",
+                (self.photo_one_id,),
             ).fetchone()
             self.assertIsNone(album)
             self.assertIsNotNone(photo)
             self.assertIsNone(photo["album_id"])
+            self.assertIsNone(photo["album_position"])
 
     def test_album_delete_can_remove_owned_photos(self):
         token = self.login("user.one", "user-password-2026")
@@ -291,6 +324,93 @@ class FabulaTestCase(unittest.TestCase):
                 ).fetchone()
             )
 
+    def test_owner_can_reorder_album_photos_for_public_display(self):
+        with self.app.app_context():
+            connection = get_db()
+            second_id = self._insert_photo(
+                connection,
+                self.user_one_id,
+                self.album_one_id,
+                "d" * 32 + ".webp",
+                "第二张照片",
+            )
+            third_id = self._insert_photo(
+                connection,
+                self.user_one_id,
+                self.album_one_id,
+                "e" * 32 + ".webp",
+                "第三张照片",
+            )
+            connection.commit()
+
+        token = self.login("user.one", "user-password-2026")
+        read_response = self.api(
+            "GET",
+            f"/studio/api/albums/{self.album_one_id}/order",
+            token,
+        )
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in read_response.get_json()["items"]},
+            {self.photo_one_id, second_id, third_id},
+        )
+
+        incomplete = self.api(
+            "PUT",
+            f"/studio/api/albums/{self.album_one_id}/order",
+            token,
+            json={"photo_ids": [third_id, self.photo_one_id]},
+        )
+        self.assertEqual(incomplete.status_code, 409)
+
+        expected = [second_id, self.photo_one_id, third_id]
+        saved = self.api(
+            "PUT",
+            f"/studio/api/albums/{self.album_one_id}/order",
+            token,
+            json={"photo_ids": expected},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.get_json()["message"], "照片顺序已保存")
+
+        public_feed = self.client.get(
+            f"/api/public/photos?album_id={self.album_one_id}&limit=24"
+        )
+        self.assertEqual(
+            [item["id"] for item in public_feed.get_json()["items"]],
+            expected,
+        )
+        with self.app.app_context():
+            rows = get_db().execute(
+                """
+                SELECT id, album_position
+                FROM photos
+                WHERE album_id = ?
+                ORDER BY album_position
+                """,
+                (self.album_one_id,),
+            ).fetchall()
+            self.assertEqual(
+                [(row["id"], row["album_position"]) for row in rows],
+                list(zip(expected, range(len(expected)))),
+            )
+
+    def test_user_cannot_read_or_reorder_another_users_album(self):
+        token = self.login("user.one", "user-password-2026")
+        read_response = self.api(
+            "GET",
+            f"/studio/api/albums/{self.album_two_id}/order",
+            token,
+        )
+        self.assertEqual(read_response.status_code, 404)
+        update_response = self.api(
+            "PUT",
+            f"/studio/api/albums/{self.album_two_id}/order",
+            token,
+            json={"photo_ids": [self.photo_two_id]},
+        )
+        self.assertEqual(update_response.status_code, 404)
+
     def test_workspace_uses_album_first_chinese_navigation(self):
         self.login("user.one", "user-password-2026")
         response = self.client.get("/studio?tab=about")
@@ -305,6 +425,8 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("你的介绍段落", html)
         self.assertNotIn("上传到本摄影集", html)
         self.assertIn("编辑或删除", html)
+        self.assertIn("data-context-sort-album", html)
+        self.assertIn("调整照片顺序", html)
 
     def test_language_switch_is_saved_and_keeps_custom_content_unchanged(self):
         token = self.login("user.one", "user-password-2026")
@@ -333,6 +455,9 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn(">My albums<", english_html)
         self.assertIn(">Account security<", english_html)
         self.assertIn(">中文</button>", english_html)
+        self.assertIn(">Reorder</button>", english_html)
+        self.assertIn("Reorder photos", english_html)
+        self.assertIn("Save photo order", english_html)
         self.assertIn("看见日常", english_html)
         self.assertIn("只属于摄影师一的介绍", english_html)
 
@@ -899,6 +1024,88 @@ class ApplicationConfigurationTestCase(unittest.TestCase):
                     "SELECT locale FROM users WHERE username = 'legacy.user'"
                 ).fetchone()
                 self.assertEqual(migrated_user["locale"], "zh-CN")
+
+    def test_existing_database_gets_album_photo_positions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            database_path = data_root / "fabula.db"
+            connection = sqlite3.connect(database_path)
+            connection.executescript(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                    display_name TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'photographer',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    password_hash TEXT NOT NULL,
+                    must_change_password INTEGER NOT NULL DEFAULT 1,
+                    initial_admin INTEGER NOT NULL DEFAULT 0,
+                    session_version INTEGER NOT NULL DEFAULT 1,
+                    locale TEXT NOT NULL DEFAULT 'zh-CN',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TEXT
+                );
+                CREATE TABLE albums (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (user_id, name),
+                    UNIQUE (id, user_id)
+                );
+                CREATE TABLE photos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    album_id INTEGER,
+                    storage_name TEXT NOT NULL UNIQUE,
+                    original_name TEXT NOT NULL,
+                    title TEXT NOT NULL DEFAULT '',
+                    story TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'ready',
+                    mime_type TEXT NOT NULL DEFAULT 'image/webp',
+                    width INTEGER NOT NULL DEFAULT 0,
+                    height INTEGER NOT NULL DEFAULT 0,
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (album_id, user_id) REFERENCES albums(id, user_id)
+                );
+                INSERT INTO users (
+                    id, username, display_name, role, status, password_hash,
+                    must_change_password
+                ) VALUES (
+                    1, 'legacy.user', '旧用户', 'photographer', 'active',
+                    'not-used-in-this-test', 0
+                );
+                INSERT INTO albums (id, user_id, name) VALUES (1, 1, '旧摄影集');
+                INSERT INTO photos (
+                    id, user_id, album_id, storage_name, original_name, title,
+                    created_at
+                ) VALUES
+                    (1, 1, 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp', 'old.webp', '旧照片', '2025-01-01T00:00:00Z'),
+                    (2, 1, 1, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webp', 'new.webp', '新照片', '2025-02-01T00:00:00Z');
+                """
+            )
+            connection.close()
+
+            app = create_app(self.app_config(data_root))
+            with app.app_context():
+                database = get_db()
+                columns = {
+                    row["name"]
+                    for row in database.execute("PRAGMA table_info(photos)").fetchall()
+                }
+                positions = database.execute(
+                    "SELECT id, album_position FROM photos ORDER BY album_position"
+                ).fetchall()
+                self.assertIn("album_position", columns)
+                self.assertEqual(
+                    [(row["id"], row["album_position"]) for row in positions],
+                    [(2, 0), (1, 1)],
+                )
 
     def test_turnstile_keys_must_be_configured_together(self):
         with tempfile.TemporaryDirectory() as directory:

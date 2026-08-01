@@ -80,6 +80,7 @@
                 <button class="paper-button" type="button" data-open-album>{{ t("新建摄影集") }}</button>
               </div>
               <div class="album-context-actions" data-album-actions="selected" hidden>
+                <button class="paper-button" type="button" data-context-sort-album>{{ t("调整顺序") }}</button>
                 <button class="paper-button" type="button" data-context-rename-album>{{ t("修改名称") }}</button>
                 <button class="paper-button" type="button" data-context-select-photos>{{ t("批量删除照片") }}</button>
                 <button class="danger-button" type="button" data-context-delete-album>{{ t("删除摄影集") }}</button>
@@ -448,6 +449,24 @@
       <div class="modal-actions">
         <button class="paper-button" type="button" data-close-dialog="delete-album-dialog">{{ t("取消") }}</button>
         <button class="danger-button" type="submit">{{ t("确认删除") }}</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog sort-album-dialog" id="sort-album-dialog">
+    <form class="modal-form sort-album-form" id="sort-album-form">
+      <button class="dialog-close" type="button" data-close-dialog="sort-album-dialog" aria-label="{{ t('关闭') }}">×</button>
+      <h2>{{ t("调整照片顺序") }}</h2>
+      <input id="sorting-album-id" type="hidden">
+      <p class="sort-album-intro" id="sort-album-intro">{{ t("拖动照片调整顺序，也可使用上移和下移按钮。公开站会按照此顺序展示摄影集。") }}</p>
+      <div class="sort-photo-list" id="sort-photo-list" role="list" aria-describedby="sort-album-intro">
+        <div class="loading-state">{{ t("正在读取照片顺序") }}</div>
+      </div>
+      <p class="sort-status" id="sort-status" aria-live="polite"></p>
+      <p class="form-error" id="sort-album-error" role="alert"></p>
+      <div class="modal-actions">
+        <button class="paper-button" type="button" data-close-dialog="sort-album-dialog">{{ t("取消") }}</button>
+        <button class="ink-button" id="save-album-order" type="submit" disabled>{{ t("保存照片顺序") }}</button>
       </div>
     </form>
   </dialog>

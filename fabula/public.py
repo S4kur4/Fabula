@@ -42,9 +42,14 @@ def serialize_photo(row) -> dict:
 def public_photos(album_id: int | None, limit: int, offset: int) -> list[dict]:
     parameters: list[object] = []
     where = ["p.status = 'ready'"]
+    order_by = "p.created_at DESC, p.id DESC"
     if album_id is not None:
         where.append("p.album_id = ?")
         parameters.append(album_id)
+        order_by = (
+            "CASE WHEN p.album_position IS NULL THEN 1 ELSE 0 END, "
+            "p.album_position, p.created_at DESC, p.id DESC"
+        )
     parameters.extend([limit, offset])
     rows = get_db().execute(
         f"""
@@ -53,7 +58,7 @@ def public_photos(album_id: int | None, limit: int, offset: int) -> list[dict]:
         JOIN users u ON u.id = p.user_id
         LEFT JOIN albums a ON a.id = p.album_id
         WHERE {" AND ".join(where)}
-        ORDER BY p.created_at DESC, p.id DESC
+        ORDER BY {order_by}
         LIMIT ? OFFSET ?
         """,
         parameters,

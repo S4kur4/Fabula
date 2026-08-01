@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     album_id INTEGER,
+    album_position INTEGER CHECK (album_position IS NULL OR album_position >= 0),
     storage_name TEXT NOT NULL UNIQUE,
     original_name TEXT NOT NULL,
     title TEXT NOT NULL DEFAULT '',
@@ -136,6 +137,39 @@ def init_db() -> None:
                 CHECK (locale IN ('zh-CN', 'en'))
             """
         )
+    photo_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(photos)").fetchall()
+    }
+    if "album_position" not in photo_columns:
+        connection.execute(
+            """
+            ALTER TABLE photos
+            ADD COLUMN album_position INTEGER
+                CHECK (album_position IS NULL OR album_position >= 0)
+            """
+        )
+        rows = connection.execute(
+            """
+            SELECT id, album_id
+            FROM photos
+            WHERE album_id IS NOT NULL
+            ORDER BY album_id, created_at DESC, id DESC
+            """
+        ).fetchall()
+        positions: dict[int, int] = {}
+        for row in rows:
+            position = positions.get(row["album_id"], 0)
+            connection.execute(
+                "UPDATE photos SET album_position = ? WHERE id = ?",
+                (position, row["id"]),
+            )
+            positions[row["album_id"]] = position + 1
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_photos_album_position
+        ON photos(album_id, album_position, id)
+        """
+    )
     connection.commit()
 
 

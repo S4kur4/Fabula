@@ -10,6 +10,7 @@
   const isAdmin = app.dataset.role === "admin";
   const albumDialog = document.querySelector("#album-dialog");
   const deleteAlbumDialog = document.querySelector("#delete-album-dialog");
+  const sortAlbumDialog = document.querySelector("#sort-album-dialog");
   const photoDialog = document.querySelector("#photo-dialog");
   const userDialog = document.querySelector("#user-dialog");
   const resetDialog = document.querySelector("#reset-password-dialog");
@@ -18,6 +19,7 @@
   let albumFilter = "all";
   let users = [];
   let uploadPreviewUrl = "";
+  let draggedSortItem = null;
 
   document.querySelector("#logout-form")?.addEventListener("submit", (event) => {
     if (!window.confirm(t("退出当前工作台并返回公开首页？"))) {
@@ -193,6 +195,190 @@
     const button = albumButton(albumFilter);
     if (button && albumFilter !== "all" && albumFilter !== "uncategorized") {
       openAlbumEditor(albumFilter, button.dataset.albumName);
+    }
+  });
+
+  function sortPhotoItems() {
+    return [...document.querySelectorAll("#sort-photo-list [data-sort-photo]")];
+  }
+
+  function refreshSortPhotoItems(announcement = "") {
+    const items = sortPhotoItems();
+    items.forEach((item, index) => {
+      const title = item.dataset.sortTitle || t("未命名照片");
+      item.querySelector("[data-sort-index]").textContent = String(index + 1).padStart(2, "0");
+      const up = item.querySelector('[data-sort-move="-1"]');
+      const down = item.querySelector('[data-sort-move="1"]');
+      up.disabled = index === 0;
+      down.disabled = index === items.length - 1;
+      up.setAttribute("aria-label", t("上移《{title}》", { title }));
+      down.setAttribute("aria-label", t("下移《{title}》", { title }));
+      item.setAttribute("aria-label", t("第 {position} 张：{title}", {
+        position: index + 1,
+        title,
+      }));
+    });
+    document.querySelector("#sort-status").textContent = announcement;
+  }
+
+  function makeSortPhotoItem(photo) {
+    const item = document.createElement("article");
+    const handle = document.createElement("span");
+    const index = document.createElement("span");
+    const visual = photo.thumb_url ? document.createElement("img") : document.createElement("div");
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    const filename = document.createElement("small");
+    const actions = document.createElement("div");
+    const up = document.createElement("button");
+    const down = document.createElement("button");
+
+    item.className = "sort-photo-item";
+    item.dataset.sortPhoto = String(photo.id);
+    item.dataset.sortTitle = photo.title || t("未命名照片");
+    item.draggable = true;
+    item.setAttribute("role", "listitem");
+    handle.className = "sort-drag-handle";
+    handle.textContent = "↕";
+    handle.setAttribute("aria-hidden", "true");
+    index.className = "sort-photo-index";
+    index.dataset.sortIndex = "";
+    if (photo.thumb_url) {
+      visual.src = photo.thumb_url;
+      visual.alt = "";
+    } else {
+      visual.className = "sort-photo-placeholder";
+      visual.textContent = t("等待处理");
+    }
+    copy.className = "sort-photo-copy";
+    title.textContent = photo.title || t("未命名照片");
+    filename.textContent = photo.original_name;
+    copy.append(title, filename);
+    actions.className = "sort-photo-actions";
+    up.type = "button";
+    up.dataset.sortMove = "-1";
+    up.textContent = "↑";
+    down.type = "button";
+    down.dataset.sortMove = "1";
+    down.textContent = "↓";
+    actions.append(up, down);
+    item.append(handle, index, visual, copy, actions);
+
+    item.addEventListener("dragstart", (event) => {
+      draggedSortItem = item;
+      item.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", item.dataset.sortPhoto);
+    });
+    item.addEventListener("dragend", () => {
+      item.classList.remove("is-dragging");
+      draggedSortItem = null;
+      refreshSortPhotoItems(
+        t("《{title}》已移到第 {position} 位", {
+          title: item.dataset.sortTitle,
+          position: sortPhotoItems().indexOf(item) + 1,
+        }),
+      );
+    });
+    return item;
+  }
+
+  document.querySelector("#sort-photo-list")?.addEventListener("dragover", (event) => {
+    const target = event.target.closest("[data-sort-photo]");
+    if (!draggedSortItem || !target || target === draggedSortItem) {
+      return;
+    }
+    event.preventDefault();
+    const bounds = target.getBoundingClientRect();
+    const afterTarget = event.clientY > bounds.top + bounds.height / 2;
+    target.parentElement.insertBefore(
+      draggedSortItem,
+      afterTarget ? target.nextElementSibling : target,
+    );
+    refreshSortPhotoItems();
+  });
+
+  document.querySelector("#sort-photo-list")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-sort-move]");
+    if (!button) {
+      return;
+    }
+    const item = button.closest("[data-sort-photo]");
+    const direction = Number(button.dataset.sortMove);
+    const sibling = direction < 0 ? item.previousElementSibling : item.nextElementSibling;
+    if (!sibling) {
+      return;
+    }
+    if (direction < 0) {
+      item.parentElement.insertBefore(item, sibling);
+    } else {
+      item.parentElement.insertBefore(sibling, item);
+    }
+    refreshSortPhotoItems(
+      t("《{title}》已移到第 {position} 位", {
+        title: item.dataset.sortTitle,
+        position: sortPhotoItems().indexOf(item) + 1,
+      }),
+    );
+    item.querySelector(`[data-sort-move="${direction}"]`)?.focus();
+  });
+
+  document.querySelector("[data-context-sort-album]")?.addEventListener("click", async () => {
+    const button = albumButton(albumFilter);
+    if (!button || albumFilter === "all" || albumFilter === "uncategorized") {
+      return;
+    }
+    const list = document.querySelector("#sort-photo-list");
+    document.querySelector("#sorting-album-id").value = albumFilter;
+    document.querySelector("#sort-album-intro").textContent = t(
+      "拖动照片调整“{name}”的顺序，也可使用上移和下移按钮。公开站会按照此顺序展示。",
+      { name: button.dataset.albumName },
+    );
+    list.innerHTML = `<div class="loading-state">${t("正在读取照片顺序")}</div>`;
+    document.querySelector("#save-album-order").disabled = true;
+    errorText(document.querySelector("#sort-album-error"));
+    document.querySelector("#sort-status").textContent = "";
+    window.Fabula.openDialog(sortAlbumDialog);
+    try {
+      const payload = await window.Fabula.api(`/studio/api/albums/${albumFilter}/order`);
+      list.replaceChildren();
+      if (!payload.items.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state sort-empty-state";
+        empty.textContent = t("这个摄影集还没有可排序的照片");
+        list.append(empty);
+        return;
+      }
+      payload.items.forEach((photo) => list.append(makeSortPhotoItem(photo)));
+      refreshSortPhotoItems();
+      document.querySelector("#save-album-order").disabled = false;
+    } catch (error) {
+      list.replaceChildren();
+      errorText(document.querySelector("#sort-album-error"), error.message);
+    }
+  });
+
+  document.querySelector("#sort-album-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const albumId = document.querySelector("#sorting-album-id").value;
+    const saveButton = document.querySelector("#save-album-order");
+    const photoIds = sortPhotoItems().map((item) => Number(item.dataset.sortPhoto));
+    saveButton.disabled = true;
+    saveButton.textContent = t("正在保存");
+    errorText(document.querySelector("#sort-album-error"));
+    try {
+      const payload = await window.Fabula.api(`/studio/api/albums/${albumId}/order`, {
+        method: "PUT",
+        body: jsonBody({ photo_ids: photoIds }),
+      });
+      window.Fabula.closeDialog(sortAlbumDialog);
+      window.Fabula.noticeAfterReload(payload.message, "success", false);
+      window.location.assign(photosUrl(albumId));
+    } catch (error) {
+      saveButton.disabled = false;
+      errorText(document.querySelector("#sort-album-error"), error.message);
+    } finally {
+      saveButton.textContent = t("保存照片顺序");
     }
   });
 
