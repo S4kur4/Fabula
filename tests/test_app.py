@@ -372,6 +372,7 @@ class FabulaTestCase(unittest.TestCase):
         )
         self.assertEqual(saved.status_code, 200)
         self.assertEqual(saved.get_json()["message"], "照片顺序已保存")
+        self.assertTrue(saved.get_json()["photo_revision"])
 
         public_feed = self.client.get(
             f"/api/public/photos?album_id={self.album_one_id}&limit=24"
@@ -425,8 +426,11 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("你的介绍段落", html)
         self.assertNotIn("上传到本摄影集", html)
         self.assertIn("编辑或删除", html)
-        self.assertIn("data-context-sort-album", html)
-        self.assertIn("调整照片顺序", html)
+        self.assertNotIn("已登录:", html)
+        self.assertNotIn("data-context-sort-album", html)
+        self.assertNotIn("sort-album-dialog", html)
+        self.assertIn('id="inline-order-status"', html)
+        self.assertIn('class="photo-order-heading">顺序</span>', html)
 
     def test_language_switch_is_saved_and_keeps_custom_content_unchanged(self):
         token = self.login("user.one", "user-password-2026")
@@ -455,9 +459,8 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn(">My albums<", english_html)
         self.assertIn(">Account security<", english_html)
         self.assertIn(">中文</button>", english_html)
-        self.assertIn(">Reorder</button>", english_html)
-        self.assertIn("Reorder photos", english_html)
-        self.assertIn("Save photo order", english_html)
+        self.assertIn('class="photo-order-heading">Order</span>', english_html)
+        self.assertIn("Changes are saved automatically", english_html)
         self.assertIn("看见日常", english_html)
         self.assertIn("只属于摄影师一的介绍", english_html)
 

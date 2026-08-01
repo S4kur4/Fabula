@@ -367,7 +367,13 @@ def update_album_order(album_id: int):
     except Exception:
         connection.rollback()
         raise
-    return jsonify({"success": True, "message": translate("照片顺序已保存")})
+    return jsonify(
+        {
+            "success": True,
+            "message": translate("照片顺序已保存"),
+            "photo_revision": photo_revision(g.user["id"]),
+        }
+    )
 
 
 @bp.delete("/api/albums/<int:album_id>")
