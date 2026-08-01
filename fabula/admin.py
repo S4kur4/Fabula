@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, url_for
 from werkzeug.security import generate_password_hash
 
 from .db import get_db
 from .i18n import translate
+from .media import (
+    SITE_IMAGE_SLOTS,
+    InvalidImage,
+    delete_site_media,
+    process_site_image,
+)
 from .security import (
     admin_required,
     api_error,
@@ -13,7 +19,13 @@ from .security import (
     valid_password,
     valid_username,
 )
-from .settings import SITE_PALETTES, get_site_copy, save_site_copy
+from .settings import (
+    SITE_PALETTES,
+    get_site_copy,
+    get_site_images,
+    save_site_copy,
+    save_site_image,
+)
 
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -55,6 +67,29 @@ def serialize_user(row) -> dict:
         "content": counts,
         "content_total": sum(counts.values()),
     }
+
+
+def serialize_site_image(slot: str, storage_name: str | None) -> dict:
+    return {
+        "slot": slot,
+        "custom": bool(storage_name),
+        "url": (
+            url_for(
+                "public.site_media_file",
+                slot=slot,
+                storage_name=storage_name,
+            )
+            if storage_name
+            else None
+        ),
+    }
+
+
+def remove_site_media_safely(storage_name: str | None) -> None:
+    try:
+        delete_site_media(storage_name)
+    except OSError:
+        current_app.logger.exception("Failed to remove superseded site image")
 
 
 @bp.get("/users")
@@ -288,6 +323,79 @@ def update_site_copy():
     )
     connection.commit()
     return jsonify({"success": True, "site_copy": saved})
+
+
+@bp.post("/site-images/<slot>")
+@admin_required
+def update_site_image(slot: str):
+    if slot not in SITE_IMAGE_SLOTS:
+        return api_error(translate("站点图片位置无效"), 404)
+    uploaded = request.files.get("image")
+    if uploaded is None or not uploaded.filename:
+        return api_error(translate("请选择站点图片"))
+    try:
+        processed = process_site_image(uploaded.stream, slot)
+    except InvalidImage as error:
+        return api_error(str(error))
+
+    connection = get_db()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        previous = get_site_images()[slot]
+        save_site_image(slot, processed["storage_name"])
+        audit(
+            "site_image.updated",
+            details={
+                "slot": slot,
+                "width": processed["width"],
+                "height": processed["height"],
+                "size_bytes": processed["size_bytes"],
+            },
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        remove_site_media_safely(processed["storage_name"])
+        raise
+
+    remove_site_media_safely(previous)
+    message = translate("首页照片已更新" if slot == "home" else "登录页照片已更新")
+    return jsonify(
+        {
+            "success": True,
+            "message": message,
+            "image": serialize_site_image(slot, processed["storage_name"]),
+        }
+    )
+
+
+@bp.delete("/site-images/<slot>")
+@admin_required
+def reset_site_image(slot: str):
+    if slot not in SITE_IMAGE_SLOTS:
+        return api_error(translate("站点图片位置无效"), 404)
+    connection = get_db()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        previous = get_site_images()[slot]
+        if previous:
+            save_site_image(slot, None)
+            audit("site_image.reset", details={"slot": slot})
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    remove_site_media_safely(previous)
+    message = translate(
+        "首页照片已恢复默认" if slot == "home" else "登录页照片已恢复默认"
+    )
+    return jsonify(
+        {
+            "success": True,
+            "message": message,
+            "image": serialize_site_image(slot, None),
+        }
+    )
 
 
 @bp.get("/site-copy")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from .db import get_db
+from .media import SITE_IMAGE_SLOTS, SITE_STORAGE_PATTERN
 
 
 DEFAULT_SITE_PALETTE = "cinnabar"
@@ -86,3 +87,41 @@ def save_site_copy(values: dict) -> dict:
         (json.dumps(cleaned, ensure_ascii=False),),
     )
     return cleaned
+
+
+def get_site_images() -> dict[str, str | None]:
+    images = {slot: None for slot in SITE_IMAGE_SLOTS}
+    row = get_db().execute(
+        "SELECT value FROM site_settings WHERE key = 'site_images'"
+    ).fetchone()
+    if row is None:
+        return images
+    try:
+        stored = json.loads(row["value"])
+    except (TypeError, json.JSONDecodeError):
+        return images
+    if not isinstance(stored, dict):
+        return images
+    for slot in SITE_IMAGE_SLOTS:
+        storage_name = stored.get(slot)
+        if isinstance(storage_name, str) and SITE_STORAGE_PATTERN.fullmatch(storage_name):
+            images[slot] = storage_name
+    return images
+
+
+def save_site_image(slot: str, storage_name: str | None) -> dict[str, str | None]:
+    if slot not in SITE_IMAGE_SLOTS:
+        raise ValueError("invalid site image slot")
+    if storage_name is not None and not SITE_STORAGE_PATTERN.fullmatch(storage_name):
+        raise ValueError("invalid site image storage name")
+    images = get_site_images()
+    images[slot] = storage_name
+    get_db().execute(
+        """
+        INSERT INTO site_settings (key, value)
+        VALUES ('site_images', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (json.dumps(images, ensure_ascii=False),),
+    )
+    return images

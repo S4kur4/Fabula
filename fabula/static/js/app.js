@@ -65,10 +65,20 @@
     if (requestOptions.body && !(requestOptions.body instanceof FormData)) {
       requestOptions.headers["Content-Type"] = "application/json";
     }
-    const response = await window.fetch(url, requestOptions);
+    let response;
+    try {
+      response = await window.fetch(url, requestOptions);
+    } catch {
+      throw new Error(t("无法连接服务器，请检查网络后重试"));
+    }
+    const fallbackMessage = response.status === 413
+      ? t("图片超过上传大小限制")
+      : response.status >= 500
+        ? t("服务器暂时无法处理请求，请稍后重试")
+        : t("服务器返回了无法识别的响应（HTTP {status}）", { status: response.status });
     const payload = await response.json().catch(() => ({
       success: false,
-      message: t("服务器返回了无法识别的响应"),
+      message: fallbackMessage,
     }));
     if (!response.ok) {
       const error = new Error(payload.message || t("请求未能完成"));

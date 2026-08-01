@@ -264,6 +264,66 @@
                 </div>
               </aside>
               <form class="workbench-form" id="site-copy-form">
+                <fieldset class="site-image-fieldset">
+                  <legend>{{ t("站点照片") }}</legend>
+                  <p>{{ t("分别设置首页与登录页的视觉照片。照片会在固定画框中居中裁切，竖图不会拉长页面。") }}</p>
+                  <div class="site-image-options">
+                    <article
+                      class="site-image-option"
+                      data-site-image-card
+                      data-site-image-slot="home"
+                      data-default-src="{{ site_images.home.default_url or '' }}"
+                      aria-busy="false"
+                    >
+                      <div class="site-image-preview">
+                        <img
+                          src="{{ site_images.home.url or '' }}"
+                          alt="{{ t('首页照片预览') }}"
+                          data-site-image-preview
+                          {{ "hidden" if not site_images.home.url }}
+                        >
+                        <span data-site-image-empty {{ "hidden" if site_images.home.url }}>{{ t("等待第一张照片") }}</span>
+                      </div>
+                      <div class="site-image-copy">
+                        <strong>{{ t("首页照片") }}</strong>
+                        <small>{{ t("默认使用最新公开作品；上传后固定显示所选照片。") }}</small>
+                        <span data-site-image-state>{{ t("当前使用自定义照片") if site_images.home.custom else t("当前使用默认照片") }}</span>
+                      </div>
+                      <div class="site-image-actions">
+                        <label class="paper-button" for="site-home-image">{{ t("更换照片") }}</label>
+                        <input id="site-home-image" type="file" accept="image/jpeg,image/png,image/webp" data-site-image-input="home">
+                        <button class="text-action" type="button" data-site-image-reset="home" {{ "hidden" if not site_images.home.custom }}>{{ t("恢复默认") }}</button>
+                      </div>
+                    </article>
+                    <article
+                      class="site-image-option"
+                      data-site-image-card
+                      data-site-image-slot="login"
+                      data-default-src="{{ site_images.login.default_url }}"
+                      aria-busy="false"
+                    >
+                      <div class="site-image-preview">
+                        <img
+                          src="{{ site_images.login.url }}"
+                          alt="{{ t('登录页照片预览') }}"
+                          data-site-image-preview
+                        >
+                        <span data-site-image-empty hidden>{{ t("等待第一张照片") }}</span>
+                      </div>
+                      <div class="site-image-copy">
+                        <strong>{{ t("登录页照片") }}</strong>
+                        <small>{{ t("默认使用内置照片；上传后固定显示所选照片。") }}</small>
+                        <span data-site-image-state>{{ t("当前使用自定义照片") if site_images.login.custom else t("当前使用默认照片") }}</span>
+                      </div>
+                      <div class="site-image-actions">
+                        <label class="paper-button" for="site-login-image">{{ t("更换照片") }}</label>
+                        <input id="site-login-image" type="file" accept="image/jpeg,image/png,image/webp" data-site-image-input="login">
+                        <button class="text-action" type="button" data-site-image-reset="login" {{ "hidden" if not site_images.login.custom }}>{{ t("恢复默认") }}</button>
+                      </div>
+                    </article>
+                  </div>
+                  <p class="form-error" id="site-image-error" role="alert"></p>
+                </fieldset>
                 <fieldset class="palette-fieldset">
                   <legend>{{ t("站点配色") }}</legend>
                   <p>{{ t("选择一套配色，浅色与深色模式会同时更新。") }}</p>

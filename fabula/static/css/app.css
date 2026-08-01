@@ -343,7 +343,8 @@ img {
 .hero {
   display: grid;
   grid-template-columns: minmax(0, .88fr) minmax(420px, 1.12fr);
-  min-height: calc(100dvh - var(--header-height));
+  height: calc(100dvh - var(--header-height));
+  min-height: 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -351,7 +352,8 @@ img {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 620px;
+  min-height: 0;
+  overflow-y: auto;
   padding: clamp(48px, 7vh, 86px) var(--page-pad) 34px;
   border-right: 1px solid var(--line);
 }
@@ -397,7 +399,8 @@ img {
 }
 
 .hero-image-wrap {
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: var(--paper-soft);
 }
@@ -405,8 +408,9 @@ img {
 .hero-image {
   width: 100%;
   height: 100%;
-  min-height: calc(100dvh - var(--header-height));
+  min-height: 0;
   object-fit: cover;
+  object-position: center;
   filter: saturate(.78) contrast(1.02);
   animation: image-arrive 900ms var(--ease) both;
 }
@@ -977,13 +981,16 @@ img {
 .login-layout {
   display: grid;
   grid-template-columns: minmax(360px, .82fr) minmax(480px, 1.18fr);
-  min-height: calc(100dvh - var(--header-height));
+  height: calc(100dvh - var(--header-height));
+  min-height: 0;
 }
 
 .login-copy {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-height: 0;
+  overflow-y: auto;
   padding: clamp(42px, 6vh, 72px) var(--page-pad) 32px;
   border-right: 1px solid var(--line);
 }
@@ -1032,7 +1039,8 @@ img {
 
 .login-image {
   position: relative;
-  min-height: 680px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: #25251f;
 }
@@ -1041,6 +1049,7 @@ img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   filter: saturate(.62) contrast(1.04);
 }
 
@@ -1683,6 +1692,7 @@ img {
   min-width: 0;
 }
 
+.site-image-fieldset,
 .palette-fieldset {
   min-width: 0;
   margin: 0 0 46px;
@@ -1690,6 +1700,7 @@ img {
   padding: 0;
 }
 
+.site-image-fieldset legend,
 .palette-fieldset legend {
   margin: 0;
   padding: 0;
@@ -1698,10 +1709,114 @@ img {
   font-weight: 500;
 }
 
+.site-image-fieldset > p,
 .palette-fieldset > p {
   margin: 8px 0 20px;
   color: var(--ink-soft);
   font-size: 11px;
+}
+
+.site-image-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.site-image-option {
+  min-width: 0;
+  border-top: 1px solid var(--line-strong);
+  padding-top: 12px;
+  transition: opacity 180ms ease;
+}
+
+.site-image-option.is-busy {
+  opacity: .58;
+}
+
+.site-image-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--paper-soft);
+}
+
+.site-image-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(.74) contrast(1.02);
+}
+
+.site-image-preview span {
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.site-image-copy {
+  display: grid;
+  gap: 4px;
+  padding: 15px 0 17px;
+}
+
+.site-image-copy strong {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.site-image-copy small {
+  min-height: 34px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.site-image-copy span {
+  margin-top: 5px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.site-image-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.site-image-actions [data-site-image-input] {
+  display: none;
+}
+
+.site-image-actions .paper-button {
+  cursor: pointer;
+}
+
+.text-action {
+  min-height: 36px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  transition: color 180ms ease;
+}
+
+.text-action:hover {
+  color: var(--accent);
 }
 
 .palette-options {
@@ -2174,11 +2289,13 @@ img {
 
   .hero,
   .login-layout {
+    height: auto;
     grid-template-columns: 1fr;
   }
 
   .hero-copy,
   .login-copy {
+    overflow-y: visible;
     min-height: auto;
     border-right: 0;
     border-bottom: 1px solid var(--line);
@@ -2192,7 +2309,8 @@ img {
 
   .hero-image-wrap,
   .hero-image {
-    min-height: 70dvh;
+    height: min(70dvh, 640px);
+    min-height: 360px;
   }
 
   .hero-image-wrap {
@@ -2204,7 +2322,8 @@ img {
   }
 
   .login-image {
-    min-height: 62dvh;
+    height: min(62dvh, 560px);
+    min-height: 340px;
   }
 
   .collection-filter {
@@ -2574,6 +2693,10 @@ img {
   }
 
   .palette-options {
+    grid-template-columns: 1fr;
+  }
+
+  .site-image-options {
     grid-template-columns: 1fr;
   }
 

@@ -5,11 +5,11 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, url_for
 
 from . import admin, auth, cli, db, i18n, public, security, studio
 from .i18n import translate
-from .settings import get_site_copy
+from .settings import get_site_copy, get_site_images
 
 
 def persistent_secret(data_root: Path) -> str:
@@ -39,6 +39,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     data_root = Path(configured_data_root).resolve()
     media_root = data_root / "media"
+    site_media_root = data_root / "site"
     temp_root = data_root / "tmp"
     secret_key = (
         test_config.get("SECRET_KEY")
@@ -51,6 +52,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SECRET_KEY=secret_key,
         DATABASE_PATH=data_root / "fabula.db",
         MEDIA_ROOT=media_root,
+        SITE_MEDIA_ROOT=site_media_root,
         TEMP_ROOT=temp_root,
         MAX_CONTENT_LENGTH=int(os.environ.get("FABULA_MAX_UPLOAD_MB", "25")) * 1024 * 1024,
         SESSION_COOKIE_NAME="fabula_session",
@@ -114,6 +116,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         Path(app.config["DATABASE_PATH"]).parent,
         Path(app.config["MEDIA_ROOT"]) / "original",
         Path(app.config["MEDIA_ROOT"]) / "thumbs",
+        Path(app.config["SITE_MEDIA_ROOT"]),
         Path(app.config["TEMP_ROOT"]),
     ):
         directory.mkdir(parents=True, exist_ok=True)
@@ -130,9 +133,51 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.context_processor
     def inject_site_context():
         site_copy = get_site_copy()
+        configured_images = get_site_images()
+        latest_photo = db.get_db().execute(
+            """
+            SELECT storage_name
+            FROM photos
+            WHERE status = 'ready'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        default_home_url = (
+            url_for(
+                "public.media_file",
+                variant="original",
+                storage_name=latest_photo["storage_name"],
+            )
+            if latest_photo is not None
+            else None
+        )
+        default_login_url = url_for("static", filename="images/login.webp")
+
+        def image_context(slot: str, default_url: str | None) -> dict:
+            storage_name = configured_images[slot]
+            custom_url = (
+                url_for(
+                    "public.site_media_file",
+                    slot=slot,
+                    storage_name=storage_name,
+                )
+                if storage_name
+                else None
+            )
+            return {
+                "url": custom_url or default_url,
+                "default_url": default_url,
+                "custom": bool(custom_url),
+            }
+
         return {
             "brand_title": site_copy["site_title"],
             "site_palette": site_copy["color_scheme"],
+            "site_images": {
+                "home": image_context("home", default_home_url),
+                "login": image_context("login", default_login_url),
+            },
         }
 
     @app.get("/healthz")
@@ -141,7 +186,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(400)
     def bad_request(_error):
-        if request.path.startswith("/api/"):
+        if security.wants_json():
             return jsonify({"success": False, "message": translate("请求无效")}), 400
         return render_template(
             "error.html", code=400, message=translate("请求无法完成。")
@@ -149,7 +194,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(403)
     def forbidden(_error):
-        if request.path.startswith("/api/"):
+        if security.wants_json():
             return jsonify(
                 {"success": False, "message": translate("没有执行此操作的权限")}
             ), 403
@@ -159,7 +204,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(404)
     def not_found(_error):
-        if request.path.startswith("/api/"):
+        if security.wants_json():
             return jsonify({"success": False, "message": translate("内容不存在")}), 404
         return render_template(
             "error.html", code=404, message=translate("没有找到这个页面。")
@@ -167,7 +212,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(413)
     def too_large(_error):
-        if request.path.startswith("/api/"):
+        if security.wants_json():
             return jsonify(
                 {"success": False, "message": translate("图片超过上传大小限制")}
             ), 413

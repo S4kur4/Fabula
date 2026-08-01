@@ -35,8 +35,13 @@
           </div>
         </div>
         <div class="hero-image-wrap">
-          {% if photos %}
-            <img class="hero-image" src="{{ photos[0].image_url }}" alt="{{ photos[0].title or t('Fabula 摄影作品') }}">
+          {% if site_images.home.url %}
+            <img
+              class="hero-image"
+              src="{{ site_images.home.url }}"
+              alt="{{ t('首页主视觉') if site_images.home.custom else (photos[0].title or t('Fabula 摄影作品')) }}"
+              fetchpriority="high"
+            >
           {% else %}
             <div class="hero-empty">{{ t("等待第一张照片") }}</div>
           {% endif %}

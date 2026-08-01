@@ -7,6 +7,7 @@ import unittest
 from io import BytesIO
 from pathlib import Path
 
+from PIL import Image
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from fabula import create_app
@@ -104,6 +105,13 @@ class FabulaTestCase(unittest.TestCase):
             """,
             (user_id, album_id, storage_name, title),
         ).lastrowid
+
+    @staticmethod
+    def image_stream(width=120, height=180):
+        stream = BytesIO()
+        Image.new("RGB", (width, height), "#806f62").save(stream, "JPEG")
+        stream.seek(0)
+        return stream
 
     def csrf_from(self, response):
         match = CSRF_PATTERN.search(response.data)
@@ -563,6 +571,99 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn('name="site-color-scheme"', studio_html)
         self.assertIn('value="celadon" checked', studio_html)
         self.assertIn("<h1>用户管理</h1>", studio_html)
+
+    def test_admin_can_manage_home_and_login_images(self):
+        token = self.login("admin.user", "admin-password-2026")
+        studio_html = self.client.get("/studio?tab=site-copy").get_data(as_text=True)
+        self.assertIn("站点照片", studio_html)
+        self.assertIn('data-site-image-input="home"', studio_html)
+        self.assertIn('data-site-image-input="login"', studio_html)
+
+        home_response = self.api(
+            "POST",
+            "/api/admin/site-images/home",
+            token,
+            data={"image": (self.image_stream(120, 240), "portrait.jpg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(home_response.status_code, 200)
+        home_payload = home_response.get_json()
+        self.assertTrue(home_payload["image"]["custom"])
+        home_url = home_payload["image"]["url"]
+        self.assertRegex(home_url, r"^/site-media/home/home-[a-f0-9]{32}\.webp$")
+        home_storage_name = home_url.rsplit("/", 1)[-1]
+        home_path = self.data_root / "site" / home_storage_name
+        self.assertTrue(home_path.is_file())
+        with Image.open(home_path) as stored_home:
+            self.assertEqual(stored_home.format, "WEBP")
+            self.assertEqual(stored_home.size, (120, 240))
+        media_response = self.client.get(home_url)
+        self.assertEqual(media_response.status_code, 200)
+        media_response.close()
+        public_html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(home_url, public_html)
+        self.assertIn('class="hero-image"', public_html)
+
+        login_response = self.api(
+            "POST",
+            "/api/admin/site-images/login",
+            token,
+            data={"image": (self.image_stream(240, 120), "landscape.png")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(login_response.status_code, 200)
+        login_url = login_response.get_json()["image"]["url"]
+        anonymous_client = self.app.test_client()
+        login_html = anonymous_client.get("/login").get_data(as_text=True)
+        self.assertIn(login_url, login_html)
+        self.assertIn("登录页视觉", login_html)
+
+        reset_response = self.api(
+            "DELETE",
+            "/api/admin/site-images/home",
+            token,
+        )
+        self.assertEqual(reset_response.status_code, 200)
+        self.assertFalse(reset_response.get_json()["image"]["custom"])
+        self.assertFalse(home_path.exists())
+        self.assertEqual(self.client.get(home_url).status_code, 404)
+        with self.app.app_context():
+            actions = [
+                row["action"]
+                for row in get_db().execute(
+                    "SELECT action FROM audit_events ORDER BY id"
+                ).fetchall()
+            ]
+            self.assertEqual(
+                actions,
+                ["site_image.updated", "site_image.updated", "site_image.reset"],
+            )
+
+    def test_regular_user_cannot_manage_site_images(self):
+        token = self.login("user.one", "user-password-2026")
+        response = self.api(
+            "POST",
+            "/api/admin/site-images/home",
+            token,
+            data={"image": (self.image_stream(), "site.jpg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(any((self.data_root / "site").iterdir()))
+
+    def test_studio_upload_limit_error_is_json(self):
+        token = self.login("user.one", "user-password-2026")
+        self.app.config["MAX_CONTENT_LENGTH"] = 256
+        response = self.api(
+            "POST",
+            "/studio/api/photos",
+            token,
+            data={"photo": (BytesIO(b"x" * 2048), "large.jpg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertTrue(response.is_json)
+        self.assertEqual(response.get_json()["message"], "图片超过上传大小限制")
 
     def test_admin_cannot_save_an_unknown_site_palette(self):
         token = self.login("admin.user", "admin-password-2026")

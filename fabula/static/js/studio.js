@@ -672,6 +672,99 @@
     }
   });
 
+  function setSiteImageBusy(card, busy) {
+    card?.setAttribute("aria-busy", String(busy));
+    card?.classList.toggle("is-busy", busy);
+    card?.querySelectorAll("button, input").forEach((control) => {
+      control.disabled = busy;
+    });
+  }
+
+  function updateSiteImageCard(card, url, custom) {
+    const preview = card?.querySelector("[data-site-image-preview]");
+    const empty = card?.querySelector("[data-site-image-empty]");
+    const reset = card?.querySelector("[data-site-image-reset]");
+    const state = card?.querySelector("[data-site-image-state]");
+    if (preview) {
+      if (url) {
+        preview.src = url;
+        preview.hidden = false;
+      } else {
+        preview.removeAttribute("src");
+        preview.hidden = true;
+      }
+    }
+    if (empty) {
+      empty.hidden = Boolean(url);
+    }
+    if (reset) {
+      reset.hidden = !custom;
+    }
+    if (state) {
+      state.textContent = t(custom ? "当前使用自定义照片" : "当前使用默认照片");
+    }
+  }
+
+  document.querySelectorAll("[data-site-image-input]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      const slot = input.dataset.siteImageInput;
+      const card = input.closest("[data-site-image-card]");
+      const state = card?.querySelector("[data-site-image-state]");
+      if (!file || !slot || !card) {
+        return;
+      }
+      const formData = new FormData();
+      formData.append("image", file);
+      setSiteImageBusy(card, true);
+      if (state) {
+        state.textContent = t("正在上传");
+      }
+      errorText(document.querySelector("#site-image-error"));
+      try {
+        const payload = await window.Fabula.api(`/api/admin/site-images/${slot}`, {
+          method: "POST",
+          body: formData,
+        });
+        updateSiteImageCard(card, payload.image.url, true);
+        window.Fabula.showToast(payload.message);
+      } catch (error) {
+        updateSiteImageCard(
+          card,
+          card.querySelector("[data-site-image-preview]")?.getAttribute("src") || "",
+          !card.querySelector("[data-site-image-reset]")?.hidden,
+        );
+        errorText(document.querySelector("#site-image-error"), error.message);
+      } finally {
+        input.value = "";
+        setSiteImageBusy(card, false);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-site-image-reset]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const slot = button.dataset.siteImageReset;
+      const card = button.closest("[data-site-image-card]");
+      if (!slot || !card || !window.confirm(t("恢复默认照片？当前自定义照片将被删除。"))) {
+        return;
+      }
+      setSiteImageBusy(card, true);
+      errorText(document.querySelector("#site-image-error"));
+      try {
+        const payload = await window.Fabula.api(`/api/admin/site-images/${slot}`, {
+          method: "DELETE",
+        });
+        updateSiteImageCard(card, card.dataset.defaultSrc || "", false);
+        window.Fabula.showToast(payload.message);
+      } catch (error) {
+        errorText(document.querySelector("#site-image-error"), error.message);
+      } finally {
+        setSiteImageBusy(card, false);
+      }
+    });
+  });
+
   const copyFields = [
     "site-title",
     "hero-before",

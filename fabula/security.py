@@ -57,7 +57,11 @@ def validate_csrf() -> bool:
 
 
 def wants_json() -> bool:
-    return request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json"
+    return (
+        request.path.startswith("/api/")
+        or request.path.startswith("/studio/api/")
+        or request.accept_mimetypes.best == "application/json"
+    )
 
 
 def api_error(message: str, status: int = 400):

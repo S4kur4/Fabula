@@ -16,8 +16,8 @@ from flask import (
 
 from .db import get_db
 from .i18n import translate
-from .media import STORAGE_PATTERN
-from .settings import get_site_copy
+from .media import SITE_IMAGE_SLOTS, SITE_STORAGE_PATTERN, STORAGE_PATTERN
+from .settings import get_site_copy, get_site_images
 
 
 bp = Blueprint("public", __name__)
@@ -201,10 +201,32 @@ def media_file(variant: str, storage_name: str):
     return send_from_directory(directory, storage_name, max_age=604800, conditional=True)
 
 
+@bp.get("/site-media/<slot>/<storage_name>")
+def site_media_file(slot: str, storage_name: str):
+    if (
+        slot not in SITE_IMAGE_SLOTS
+        or not SITE_STORAGE_PATTERN.fullmatch(storage_name)
+        or get_site_images().get(slot) != storage_name
+    ):
+        abort(404)
+    return send_from_directory(
+        current_site_media_directory(),
+        storage_name,
+        max_age=31536000,
+        conditional=True,
+    )
+
+
 def current_media_directory(variant: str) -> str:
     from flask import current_app
 
     return str(current_app.config["MEDIA_ROOT"] / variant)
+
+
+def current_site_media_directory() -> str:
+    from flask import current_app
+
+    return str(current_app.config["SITE_MEDIA_ROOT"])
 
 
 @bp.get("/sitemap.xml")
