@@ -3,9 +3,12 @@ from __future__ import annotations
 import re
 import sqlite3
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -13,6 +16,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from fabula import create_app
 from fabula.cli import bootstrap_admin
 from fabula.db import get_db
+from fabula.media import drain_media_deletions, process_image
+from fabula.security import reserve_login_attempt
 
 
 CSRF_PATTERN = re.compile(rb'<meta name="csrf-token" content="([^"]+)">')
@@ -173,6 +178,9 @@ class FabulaTestCase(unittest.TestCase):
         health = self.client.get("/healthz")
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.get_json(), {"status": "ok"})
+        ready = self.client.get("/readyz")
+        self.assertEqual(ready.status_code, 200)
+        self.assertEqual(ready.get_json(), {"status": "ready"})
         response = self.client.get("/")
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
@@ -663,14 +671,260 @@ class FabulaTestCase(unittest.TestCase):
                 "username": "new.user",
                 "display_name": "新摄影师",
                 "role": "photographer",
-                "temporary_password": "temporary-2026",
+                "temporary_password": "welcome-2026",
             },
         )
         self.assertEqual(response.status_code, 200)
-        user = response.get_json()["user"]
+        payload = response.get_json()
+        user = payload["user"]
+        generated_password = payload["temporary_password"]
         self.assertEqual(user["status"], "pending")
         self.assertTrue(user["must_change_password"])
         self.assertEqual(user["role"], "photographer")
+        self.assertNotEqual(generated_password, "welcome-2026")
+        self.assertGreaterEqual(payload["temporary_password_expires_in"], 60)
+        with self.app.app_context():
+            stored = get_db().execute(
+                "SELECT * FROM users WHERE username = 'new.user'"
+            ).fetchone()
+            self.assertTrue(check_password_hash(stored["password_hash"], generated_password))
+            self.assertGreater(stored["temporary_password_expires_at"], int(time.time()))
+
+        anonymous_client = self.app.test_client()
+        login_page = anonymous_client.get("/login")
+        csrf_token = CSRF_PATTERN.search(login_page.data).group(1).decode()
+        rejected = anonymous_client.post(
+            "/login",
+            data={
+                "username": "new.user",
+                "password": "welcome-2026",
+                "csrf_token": csrf_token,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        accepted = anonymous_client.post(
+            "/login",
+            data={
+                "username": "new.user",
+                "password": generated_password,
+                "csrf_token": csrf_token,
+            },
+        )
+        self.assertEqual(accepted.status_code, 302)
+
+        studio_html = self.client.get("/studio?tab=users").get_data(as_text=True)
+        self.assertNotIn("welcome-2026", studio_html)
+        self.assertNotIn("temporary-2026", studio_html)
+
+    def test_admin_password_reset_uses_a_unique_expiring_server_secret(self):
+        token = self.login("admin.user", "admin-password-2026")
+        response = self.api(
+            "POST",
+            f"/api/admin/users/{self.user_one_id}/reset-password",
+            token,
+            json={"temporary_password": "temporary-2026"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        generated_password = payload["temporary_password"]
+        self.assertNotEqual(generated_password, "temporary-2026")
+        self.assertGreaterEqual(payload["temporary_password_expires_in"], 60)
+
+        with self.app.app_context():
+            user = get_db().execute(
+                "SELECT * FROM users WHERE id = ?", (self.user_one_id,)
+            ).fetchone()
+            self.assertTrue(check_password_hash(user["password_hash"], generated_password))
+            self.assertGreater(user["temporary_password_expires_at"], int(time.time()))
+
+        reset_client = self.app.test_client()
+        login_page = reset_client.get("/login")
+        csrf_token = CSRF_PATTERN.search(login_page.data).group(1).decode()
+        rejected = reset_client.post(
+            "/login",
+            data={
+                "username": "user.one",
+                "password": "temporary-2026",
+                "csrf_token": csrf_token,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        accepted = reset_client.post(
+            "/login",
+            data={
+                "username": "user.one",
+                "password": generated_password,
+                "csrf_token": csrf_token,
+            },
+        )
+        self.assertEqual(accepted.status_code, 302)
+
+    def test_expired_temporary_password_cannot_authenticate(self):
+        token = self.login("admin.user", "admin-password-2026")
+        response = self.api(
+            "POST",
+            f"/api/admin/users/{self.user_two_id}/reset-password",
+            token,
+            json={},
+        )
+        generated_password = response.get_json()["temporary_password"]
+        with self.app.app_context():
+            get_db().execute(
+                "UPDATE users SET temporary_password_expires_at = 0 WHERE id = ?",
+                (self.user_two_id,),
+            )
+            get_db().commit()
+
+        reset_client = self.app.test_client()
+        login_page = reset_client.get("/login")
+        csrf_token = CSRF_PATTERN.search(login_page.data).group(1).decode()
+        rejected = reset_client.post(
+            "/login",
+            data={
+                "username": "user.two",
+                "password": generated_password,
+                "csrf_token": csrf_token,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertIn("账号或密码不正确。", rejected.get_data(as_text=True))
+
+    def test_login_hash_work_is_uniform_for_existing_and_missing_users(self):
+        login_page = self.client.get("/login")
+        csrf_token = self.csrf_from(login_page)
+        with patch("fabula.auth.check_password_hash", return_value=False) as verifier:
+            existing = self.client.post(
+                "/login",
+                data={
+                    "username": "user.one",
+                    "password": "wrong-password-2026",
+                    "csrf_token": csrf_token,
+                },
+            )
+            missing = self.client.post(
+                "/login",
+                data={
+                    "username": "missing.user",
+                    "password": "wrong-password-2026",
+                    "csrf_token": csrf_token,
+                },
+            )
+        self.assertEqual(existing.status_code, 200)
+        self.assertEqual(missing.status_code, 200)
+        self.assertEqual(verifier.call_count, 2)
+        self.assertEqual(
+            verifier.call_args_list[1].args[0],
+            self.app.config["DUMMY_PASSWORD_HASH"],
+        )
+
+    def test_login_attempt_reservation_is_atomic(self):
+        fingerprint = "f" * 64
+        self.app.config["LOGIN_MAX_ATTEMPTS"] = 5
+        with self.app.app_context():
+            get_db().executemany(
+                "INSERT INTO login_attempts (fingerprint, attempted_at) VALUES (?, ?)",
+                [(fingerprint, int(time.time()))] * 4,
+            )
+            get_db().commit()
+
+        def reserve():
+            with self.app.app_context():
+                return reserve_login_attempt(fingerprint)
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda _index: reserve(), range(4)))
+        self.assertEqual(sum(results), 1)
+        with self.app.app_context():
+            count = get_db().execute(
+                "SELECT COUNT(*) FROM login_attempts WHERE fingerprint = ?",
+                (fingerprint,),
+            ).fetchone()[0]
+        self.assertEqual(count, 5)
+
+    def test_image_pixel_budget_rejects_before_processing(self):
+        token = self.login("user.one", "user-password-2026")
+        self.app.config["MAX_IMAGE_PIXELS"] = 10_000
+        response = self.api(
+            "POST",
+            "/studio/api/photos",
+            token,
+            data={"photo": (self.image_stream(101, 100), "over-budget.jpg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["message"], "图片像素数量超过安全处理限制")
+
+    def test_image_variants_are_bounded_before_encoding(self):
+        self.app.config["MAX_IMAGE_PIXELS"] = 4_000_000
+        encoded_sizes = []
+
+        def fake_save(image, destination, quality):
+            encoded_sizes.append((image.size, quality))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"test")
+
+        with self.app.app_context(), patch("fabula.media._save_webp", side_effect=fake_save):
+            process_image(self.image_stream(3000, 1000))
+        self.assertEqual(encoded_sizes, [((2400, 800), 84), ((1000, 333), 78)])
+
+    def test_bulk_delete_rejects_oversized_identifier_lists(self):
+        token = self.login("user.one", "user-password-2026")
+        response = self.api(
+            "POST",
+            "/studio/api/photos/bulk-delete",
+            token,
+            json={"ids": list(range(10_000, 10_501))},
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("一次最多删除 500 张照片", response.get_json()["message"])
+
+    def test_failed_media_cleanup_is_queued_and_retried(self):
+        token = self.login("user.one", "user-password-2026")
+        with patch("fabula.media.delete_media", side_effect=OSError("busy filesystem")):
+            response = self.api(
+                "DELETE",
+                f"/studio/api/photos/{self.photo_one_id}",
+                token,
+            )
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            connection = get_db()
+            self.assertIsNone(
+                connection.execute(
+                    "SELECT id FROM photos WHERE id = ?",
+                    (self.photo_one_id,),
+                ).fetchone()
+            )
+            queued = connection.execute(
+                "SELECT attempts FROM media_cleanup_queue"
+            ).fetchone()
+            self.assertEqual(queued["attempts"], 1)
+            self.assertEqual(drain_media_deletions(), 1)
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM media_cleanup_queue"
+                ).fetchone()[0],
+                0,
+            )
+
+    def test_user_list_uses_aggregate_counts_without_per_user_queries(self):
+        token = self.login("admin.user", "admin-password-2026")
+        with patch("fabula.admin.content_counts", side_effect=AssertionError("N+1 query")):
+            response = self.api("GET", "/api/admin/users", token)
+        self.assertEqual(response.status_code, 200)
+        items = response.get_json()["items"]
+        user_one = next(item for item in items if item["id"] == self.user_one_id)
+        self.assertEqual(user_one["content"], {"photos": 1, "albums": 1, "about": 1})
+
+    def test_schema_migrations_are_versioned(self):
+        with self.app.app_context():
+            versions = {
+                row["version"]
+                for row in get_db().execute(
+                    "SELECT version FROM schema_migrations"
+                ).fetchall()
+            }
+        self.assertEqual(versions, {1, 2, 3, 4})
 
     def test_admin_can_update_public_copy(self):
         token = self.login("admin.user", "admin-password-2026")
@@ -1140,6 +1394,57 @@ class ApplicationConfigurationTestCase(unittest.TestCase):
             config["TURNSTILE_TIMEOUT_SECONDS"] = 31
             with self.assertRaisesRegex(RuntimeError, "must be between 1 and 30"):
                 create_app(config)
+
+    def test_production_requires_secure_session_cookies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            config = self.app_config(data_root)
+            config.update(
+                ENVIRONMENT="production",
+                SESSION_COOKIE_SECURE=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "must be true in production"):
+                create_app(config)
+
+    def test_image_and_temporary_password_limits_are_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            config = self.app_config(data_root)
+            config["MAX_IMAGE_PIXELS"] = 12_000_001
+            with self.assertRaisesRegex(RuntimeError, "FABULA_MAX_IMAGE_PIXELS"):
+                create_app(config)
+
+            config = self.app_config(data_root)
+            config["TEMPORARY_PASSWORD_TTL_SECONDS"] = 59
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "FABULA_TEMPORARY_PASSWORD_TTL_SECONDS",
+            ):
+                create_app(config)
+
+    def test_demo_seed_rolls_back_database_and_generated_media(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            app = create_app(self.app_config(data_root))
+            processed = {
+                "storage_name": "a" * 32 + ".webp",
+                "width": 1200,
+                "height": 800,
+                "size_bytes": 1024,
+            }
+            with (
+                patch("fabula.cli.process_image", return_value=processed),
+                patch("fabula.cli.delete_media") as delete_media,
+            ):
+                result = app.test_cli_runner().invoke(args=["seed-demo"])
+
+            self.assertNotEqual(result.exit_code, 0)
+            with app.app_context():
+                self.assertEqual(
+                    get_db().execute("SELECT COUNT(*) FROM users").fetchone()[0],
+                    0,
+                )
+            self.assertEqual(delete_media.call_count, 12)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@
   let loading = false;
   let lightboxIndex = 0;
   let slideshowTimer = 0;
+  let photoModels = [];
 
   function showPublicView(name, updateHash = true) {
     const safeName = name === "about" ? "about" : "gallery";
@@ -81,8 +82,10 @@
   }
 
   function currentPhotos() {
-    return [...document.querySelectorAll(".photo-card")].map(photoFromCard);
+    return photoModels;
   }
+
+  photoModels = [...document.querySelectorAll(".photo-card")].map(photoFromCard);
 
   function renderLightbox() {
     const photos = currentPhotos();
@@ -109,21 +112,25 @@
         total: photos.length,
       },
     );
-    lightboxThumbs.replaceChildren();
-    photos.forEach((item, index) => {
-      const button = document.createElement("button");
-      const image = document.createElement("img");
-      button.type = "button";
-      button.classList.toggle("is-active", index === lightboxIndex);
-      button.setAttribute("aria-label", t("查看第 {index} 张照片", { index: index + 1 }));
-      image.src = item.thumb_url;
-      image.alt = "";
-      button.append(image);
-      button.addEventListener("click", () => {
-        lightboxIndex = index;
-        renderLightbox();
+    if (lightboxThumbs.children.length !== photos.length) {
+      lightboxThumbs.replaceChildren();
+      photos.forEach((item, index) => {
+        const button = document.createElement("button");
+        const image = document.createElement("img");
+        button.type = "button";
+        button.setAttribute("aria-label", t("查看第 {index} 张照片", { index: index + 1 }));
+        image.src = item.thumb_url;
+        image.alt = "";
+        button.append(image);
+        button.addEventListener("click", () => {
+          lightboxIndex = index;
+          renderLightbox();
+        });
+        lightboxThumbs.append(button);
       });
-      lightboxThumbs.append(button);
+    }
+    [...lightboxThumbs.children].forEach((button, index) => {
+      button.classList.toggle("is-active", index === lightboxIndex);
     });
   }
 
@@ -251,8 +258,13 @@
       const payload = await window.Fabula.api(`/api/public/photos?${query}`);
       if (reset) {
         galleryGrid.replaceChildren();
+        photoModels = [];
       }
-      payload.items.forEach((photo) => galleryGrid.append(makePhotoCard(photo)));
+      payload.items.forEach((photo) => {
+        photoModels.push(photo);
+        galleryGrid.append(makePhotoCard(photo));
+      });
+      lightboxThumbs.replaceChildren();
       nextOffset = payload.next_offset === null ? "" : String(payload.next_offset);
       sentinel.dataset.nextOffset = nextOffset;
       if (!payload.items.length) {

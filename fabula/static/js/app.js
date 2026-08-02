@@ -22,8 +22,32 @@
     );
   }
 
+  function storageGet(storageName, key) {
+    try {
+      return window[storageName].getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function storageSet(storageName, key, value) {
+    try {
+      window[storageName].setItem(key, value);
+    } catch {
+      // Storage can be disabled by privacy controls; the UI still works in memory.
+    }
+  }
+
+  function storageRemove(storageName, key) {
+    try {
+      window[storageName].removeItem(key);
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+  }
+
   function preferredTheme() {
-    const stored = window.localStorage.getItem("fabula-theme");
+    const stored = storageGet("localStorage", "fabula-theme");
     if (stored === "dark" || stored === "light") {
       return stored;
     }
@@ -107,9 +131,9 @@
   }
 
   function noticeAfterReload(message, kind = "success", preserveScroll = true) {
-    window.sessionStorage.setItem("fabula-notice", JSON.stringify({ message, kind }));
+    storageSet("sessionStorage", "fabula-notice", JSON.stringify({ message, kind }));
     if (preserveScroll) {
-      window.sessionStorage.setItem("fabula-scroll-y", String(window.scrollY));
+      storageSet("sessionStorage", "fabula-scroll-y", String(window.scrollY));
     }
   }
 
@@ -118,7 +142,7 @@
   document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-      window.localStorage.setItem("fabula-theme", nextTheme);
+      storageSet("localStorage", "fabula-theme", nextTheme);
       applyTheme(nextTheme);
     });
   });
@@ -151,20 +175,20 @@
     );
   });
 
-  const storedNotice = window.sessionStorage.getItem("fabula-notice");
+  const storedNotice = storageGet("sessionStorage", "fabula-notice");
   if (storedNotice) {
-    window.sessionStorage.removeItem("fabula-notice");
+    storageRemove("sessionStorage", "fabula-notice");
     try {
       const notice = JSON.parse(storedNotice);
       showToast(notice.message, notice.kind);
     } catch {
-      window.sessionStorage.removeItem("fabula-notice");
+      storageRemove("sessionStorage", "fabula-notice");
     }
   }
 
-  const storedScrollValue = window.sessionStorage.getItem("fabula-scroll-y");
+  const storedScrollValue = storageGet("sessionStorage", "fabula-scroll-y");
   if (storedScrollValue !== null) {
-    window.sessionStorage.removeItem("fabula-scroll-y");
+    storageRemove("sessionStorage", "fabula-scroll-y");
     const storedScroll = Number(storedScrollValue);
     if (Number.isFinite(storedScroll) && storedScroll > 0) {
       window.requestAnimationFrame(() => window.scrollTo({ top: storedScroll }));

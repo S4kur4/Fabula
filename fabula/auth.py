@@ -19,9 +19,9 @@ from .security import (
     clear_failed_logins,
     client_address,
     login_fingerprint,
-    login_is_limited,
-    record_failed_login,
+    reserve_login_attempt,
     safe_next_url,
+    temporary_password_is_valid,
 )
 from .settings import get_site_copy
 from .turnstile import is_enabled, verify_token
@@ -39,7 +39,7 @@ def login():
     username = request.form.get("username", "").strip()
     if request.method == "POST":
         fingerprint = login_fingerprint(username)
-        if login_is_limited(fingerprint):
+        if not reserve_login_attempt(fingerprint):
             error = translate("登录尝试过多，请稍后再试。")
         else:
             turnstile_valid, turnstile_reason = verify_token(
@@ -47,7 +47,6 @@ def login():
                 client_address(),
             )
             if not turnstile_valid:
-                record_failed_login(fingerprint)
                 if turnstile_reason == "siteverify-unavailable":
                     error = translate("人机验证暂时不可用，请稍后再试。")
                 else:
@@ -57,15 +56,22 @@ def login():
                     "SELECT * FROM users WHERE username = ?",
                     (username,),
                 ).fetchone()
+                eligible = user is not None and user["status"] != "inactive"
+                candidate_hash = (
+                    user["password_hash"]
+                    if eligible
+                    else current_app.config["DUMMY_PASSWORD_HASH"]
+                )
+                password_valid = check_password_hash(
+                    candidate_hash,
+                    request.form.get("password", ""),
+                )
                 valid = (
-                    user is not None
-                    and user["status"] != "inactive"
-                    and check_password_hash(
-                        user["password_hash"], request.form.get("password", "")
-                    )
+                    eligible
+                    and password_valid
+                    and temporary_password_is_valid(user)
                 )
                 if not valid:
-                    record_failed_login(fingerprint)
                     error = translate("账号或密码不正确。")
                 else:
                     clear_failed_logins(fingerprint)

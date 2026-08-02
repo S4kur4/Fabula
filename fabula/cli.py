@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import click
@@ -9,7 +10,7 @@ from flask.cli import with_appcontext
 from werkzeug.security import generate_password_hash
 
 from .db import get_db, init_db
-from .media import process_image
+from .media import delete_media, process_image
 from .security import audit, valid_password, valid_username
 from .settings import save_site_copy
 
@@ -18,7 +19,7 @@ DEMO_USERS = [
     ("lin.qiu", "林秋", "admin", "active", "fabula-demo-2026", 0, 1),
     ("zhou.wang", "周望", "photographer", "active", "fabula-user-2026", 0, 0),
     ("chen.cheng", "陈澄", "photographer", "active", "fabula-user-2026", 0, 0),
-    ("he.yan", "何言", "photographer", "pending", "welcome-2026", 1, 0),
+    ("he.yan", "何言", "photographer", "active", "fabula-user-2026", 0, 0),
 ]
 
 DEMO_PROFILES = {
@@ -69,18 +70,31 @@ def bootstrap_admin(username: str, display_name: str, password: str) -> None:
     if not valid_password(password):
         raise click.ClickException("密码至少 12 个字符，并同时包含字母和数字")
     connection = get_db()
-    if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
-        raise click.ClickException("系统中已经存在用户，初始管理员流程已关闭")
-    connection.execute(
-        """
-        INSERT INTO users (
-            username, display_name, role, status, password_hash,
-            must_change_password, initial_admin
-        ) VALUES (?, ?, 'admin', 'active', ?, 1, 1)
-        """,
-        (username, display_name.strip(), generate_password_hash(password)),
-    )
-    connection.commit()
+    expires_at = int(time.time()) + current_app.config[
+        "TEMPORARY_PASSWORD_TTL_SECONDS"
+    ]
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
+            raise click.ClickException("系统中已经存在用户，初始管理员流程已关闭")
+        connection.execute(
+            """
+            INSERT INTO users (
+                username, display_name, role, status, password_hash,
+                must_change_password, temporary_password_expires_at, initial_admin
+            ) VALUES (?, ?, 'admin', 'active', ?, 1, ?, 1)
+            """,
+            (
+                username,
+                display_name.strip(),
+                generate_password_hash(password),
+                expires_at,
+            ),
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
 
 
 def reset_admin_password(username: str, password: str) -> None:
@@ -106,15 +120,20 @@ def reset_admin_password(username: str, password: str) -> None:
         if admin["status"] == "inactive":
             raise click.ClickException("管理员账号已停用，请先通过独立治理流程恢复账号")
 
+        expires_at = int(time.time()) + current_app.config[
+            "TEMPORARY_PASSWORD_TTL_SECONDS"
+        ]
+
         connection.execute(
             """
             UPDATE users
             SET password_hash = ?, must_change_password = 1,
+                temporary_password_expires_at = ?,
                 session_version = session_version + 1,
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE id = ?
             """,
-            (generate_password_hash(password), admin["id"]),
+            (generate_password_hash(password), expires_at, admin["id"]),
         )
         audit(
             "user.password_reset",
@@ -160,88 +179,114 @@ def reset_admin_password_command(username: str):
 @click.command("seed-demo")
 @with_appcontext
 def seed_demo_command():
-    connection = get_db()
-    if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
-        raise click.ClickException("数据库中已经存在用户，拒绝覆盖现有数据")
-
-    user_ids = {}
-    for username, name, role, status, password, must_change, initial in DEMO_USERS:
-        cursor = connection.execute(
-            """
-            INSERT INTO users (
-                username, display_name, role, status, password_hash,
-                must_change_password, initial_admin
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                username,
-                name,
-                role,
-                status,
-                generate_password_hash(password),
-                must_change,
-                initial,
-            ),
-        )
-        user_ids[username] = cursor.lastrowid
-
-    album_ids = {}
-    for username, album_name, *_rest in DEMO_PHOTOS:
-        key = (username, album_name)
-        if key in album_ids:
-            continue
-        cursor = connection.execute(
-            "INSERT INTO albums (user_id, name) VALUES (?, ?)",
-            (user_ids[username], album_name),
-        )
-        album_ids[key] = cursor.lastrowid
-
-    for username, profile in DEMO_PROFILES.items():
-        connection.execute(
-            """
-            INSERT INTO about_blocks (
-                user_id, title, bio, signature, gear_json, contact_json
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_ids[username],
-                profile["title"],
-                profile["bio"],
-                profile["signature"],
-                json.dumps(profile["gear"], ensure_ascii=False),
-                json.dumps(profile["contact"], ensure_ascii=False),
-            ),
-        )
-
+    if current_app.config["ENVIRONMENT"] == "production":
+        raise click.ClickException("生产环境禁止写入演示账号和演示内容")
     asset_root = Path(current_app.root_path).parent / "demo_assets"
+    sources = []
     for username, album_name, filename, title, story in DEMO_PHOTOS:
         source = asset_root / filename
         if not source.exists():
             raise click.ClickException(f"缺少演示图片：{filename}")
-        with source.open("rb") as image_file:
-            processed = process_image(image_file)
-        connection.execute(
-            """
-            INSERT INTO photos (
-                user_id, album_id, storage_name, original_name, title, story,
-                status, mime_type, width, height, size_bytes
-            ) VALUES (?, ?, ?, ?, ?, ?, 'ready', 'image/webp', ?, ?, ?)
-            """,
-            (
-                user_ids[username],
-                album_ids[(username, album_name)],
-                processed["storage_name"],
-                filename,
-                title,
-                story,
-                processed["width"],
-                processed["height"],
-                processed["size_bytes"],
-            ),
-        )
+        sources.append((username, album_name, filename, title, story, source))
 
-    save_site_copy({})
-    connection.commit()
+    processed_photos = []
+    connection = get_db()
+    if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
+        raise click.ClickException("数据库中已经存在用户，拒绝覆盖现有数据")
+    try:
+        for username, album_name, filename, title, story, source in sources:
+            with source.open("rb") as image_file:
+                processed = process_image(image_file)
+            processed_photos.append(
+                (username, album_name, filename, title, story, processed)
+            )
+
+        connection.execute("BEGIN IMMEDIATE")
+        if connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] != 0:
+            raise click.ClickException("数据库中已经存在用户，拒绝覆盖现有数据")
+
+        user_ids = {}
+        for username, name, role, status, password, must_change, initial in DEMO_USERS:
+            cursor = connection.execute(
+                """
+                INSERT INTO users (
+                    username, display_name, role, status, password_hash,
+                    must_change_password, initial_admin
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    name,
+                    role,
+                    status,
+                    generate_password_hash(password),
+                    must_change,
+                    initial,
+                ),
+            )
+            user_ids[username] = cursor.lastrowid
+
+        album_ids = {}
+        for username, album_name, *_rest in DEMO_PHOTOS:
+            key = (username, album_name)
+            if key in album_ids:
+                continue
+            cursor = connection.execute(
+                "INSERT INTO albums (user_id, name) VALUES (?, ?)",
+                (user_ids[username], album_name),
+            )
+            album_ids[key] = cursor.lastrowid
+
+        for username, profile in DEMO_PROFILES.items():
+            connection.execute(
+                """
+                INSERT INTO about_blocks (
+                    user_id, title, bio, signature, gear_json, contact_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_ids[username],
+                    profile["title"],
+                    profile["bio"],
+                    profile["signature"],
+                    json.dumps(profile["gear"], ensure_ascii=False),
+                    json.dumps(profile["contact"], ensure_ascii=False),
+                ),
+            )
+
+        for username, album_name, filename, title, story, processed in processed_photos:
+            connection.execute(
+                """
+                INSERT INTO photos (
+                    user_id, album_id, storage_name, original_name, title, story,
+                    status, mime_type, width, height, size_bytes
+                ) VALUES (?, ?, ?, ?, ?, ?, 'ready', 'image/webp', ?, ?, ?)
+                """,
+                (
+                    user_ids[username],
+                    album_ids[(username, album_name)],
+                    processed["storage_name"],
+                    filename,
+                    title,
+                    story,
+                    processed["width"],
+                    processed["height"],
+                    processed["size_bytes"],
+                ),
+            )
+
+        save_site_copy({})
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        for *_metadata, processed in processed_photos:
+            try:
+                delete_media(processed["storage_name"])
+            except OSError:
+                current_app.logger.exception(
+                    "Failed to remove media after demo seed rollback"
+                )
+        raise
     click.echo("演示数据已创建。")
     click.echo("管理员：lin.qiu / fabula-demo-2026")
     click.echo("普通用户：zhou.wang / fabula-user-2026")

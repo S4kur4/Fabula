@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import os
 import secrets
+import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, url_for
+from flask import Flask, g, jsonify, render_template, request, url_for
+from werkzeug.security import generate_password_hash
 
 from . import admin, auth, cli, db, i18n, public, security, studio
 from .i18n import translate
+from .media import drain_media_deletions
 from .settings import get_site_copy, get_site_images
+
+
+def _bounded_integer(value: object, name: str, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"{name} must be an integer") from error
+    if not minimum <= parsed <= maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return parsed
 
 
 def persistent_secret(data_root: Path) -> str:
@@ -59,6 +72,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.environ.get("FABULA_SECURE_COOKIE", "false").lower() == "true",
+        ENVIRONMENT=os.environ.get("FABULA_ENV", "development").strip().lower(),
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
         LOGIN_MAX_ATTEMPTS=int(os.environ.get("FABULA_LOGIN_MAX_ATTEMPTS", "5")),
         LOGIN_WINDOW_SECONDS=int(os.environ.get("FABULA_LOGIN_WINDOW_SECONDS", "900")),
@@ -73,9 +87,26 @@ def create_app(test_config: dict | None = None) -> Flask:
             os.environ.get("FABULA_TURNSTILE_TIMEOUT_SECONDS", "5")
         ),
         TURNSTILE_VERIFIER=None,
+        TEMPORARY_PASSWORD_TTL_SECONDS=int(
+            os.environ.get("FABULA_TEMPORARY_PASSWORD_TTL_SECONDS", "900")
+        ),
+        MAX_IMAGE_PIXELS=int(
+            os.environ.get("FABULA_MAX_IMAGE_PIXELS", "12000000")
+        ),
+        MAX_IMAGE_DIMENSION=int(
+            os.environ.get("FABULA_MAX_IMAGE_DIMENSION", "12000")
+        ),
+        DUMMY_PASSWORD_HASH=generate_password_hash(secrets.token_urlsafe(32)),
     )
     if test_config:
         app.config.update(test_config)
+
+    environment = str(app.config["ENVIRONMENT"]).strip().lower()
+    if environment not in {"development", "production", "test"}:
+        raise RuntimeError("FABULA_ENV must be development, production, or test")
+    if environment == "production" and not app.config["SESSION_COOKIE_SECURE"]:
+        raise RuntimeError("FABULA_SECURE_COOKIE must be true in production")
+    app.config["ENVIRONMENT"] = environment
 
     turnstile_site_key = str(app.config["TURNSTILE_SITE_KEY"]).strip()
     turnstile_secret_key = str(app.config["TURNSTILE_SECRET_KEY"]).strip()
@@ -110,6 +141,24 @@ def create_app(test_config: dict | None = None) -> Flask:
         TURNSTILE_SECRET_KEY=turnstile_secret_key,
         TURNSTILE_EXPECTED_HOSTNAMES=frozenset(expected_hostnames),
         TURNSTILE_TIMEOUT_SECONDS=turnstile_timeout,
+        TEMPORARY_PASSWORD_TTL_SECONDS=_bounded_integer(
+            app.config["TEMPORARY_PASSWORD_TTL_SECONDS"],
+            "FABULA_TEMPORARY_PASSWORD_TTL_SECONDS",
+            60,
+            86_400,
+        ),
+        MAX_IMAGE_PIXELS=_bounded_integer(
+            app.config["MAX_IMAGE_PIXELS"],
+            "FABULA_MAX_IMAGE_PIXELS",
+            1_024,
+            12_000_000,
+        ),
+        MAX_IMAGE_DIMENSION=_bounded_integer(
+            app.config["MAX_IMAGE_DIMENSION"],
+            "FABULA_MAX_IMAGE_DIMENSION",
+            32,
+            12_000,
+        ),
     )
 
     for directory in (
@@ -122,6 +171,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         directory.mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
+    with app.app_context():
+        drain_media_deletions()
     security.init_app(app)
     i18n.init_app(app)
     cli.init_app(app)
@@ -133,16 +184,34 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.context_processor
     def inject_site_context():
         site_copy = get_site_copy()
-        configured_images = get_site_images()
-        latest_photo = db.get_db().execute(
-            """
-            SELECT storage_name
-            FROM photos
-            WHERE status = 'ready'
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """
-        ).fetchone()
+        needs_site_images = request.endpoint in {"auth.login", "public.index"} or (
+            request.endpoint == "studio.workspace"
+            and getattr(g, "user", None) is not None
+            and g.user["role"] == "admin"
+        )
+        configured_images = (
+            get_site_images()
+            if needs_site_images
+            else {"home": None, "login": None}
+        )
+        needs_home_default = request.endpoint == "public.index" or (
+            request.endpoint == "studio.workspace"
+            and getattr(g, "user", None) is not None
+            and g.user["role"] == "admin"
+        )
+        latest_photo = (
+            db.get_db().execute(
+                """
+                SELECT storage_name
+                FROM photos
+                WHERE status = 'ready'
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            if needs_home_default
+            else None
+        )
         default_home_url = (
             url_for(
                 "public.media_file",
@@ -183,6 +252,23 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.get("/healthz")
     def healthz():
         return jsonify({"status": "ok"})
+
+    @app.get("/readyz")
+    def readyz():
+        try:
+            db.get_db().execute("SELECT 1").fetchone()
+            data_paths = (
+                Path(app.config["DATABASE_PATH"]).parent,
+                Path(app.config["MEDIA_ROOT"]),
+                Path(app.config["SITE_MEDIA_ROOT"]),
+                Path(app.config["TEMP_ROOT"]),
+            )
+            if not all(os.access(path, os.W_OK | os.X_OK) for path in data_paths):
+                raise OSError("a required data path is not writable")
+        except (OSError, sqlite3.Error):
+            app.logger.exception("Readiness check failed")
+            return jsonify({"status": "unavailable"}), 503
+        return jsonify({"status": "ready"})
 
     @app.errorhandler(400)
     def bad_request(_error):

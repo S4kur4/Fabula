@@ -3,12 +3,14 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
 from flask import current_app
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .db import get_db
 from .i18n import translate
 
 
@@ -16,7 +18,9 @@ STORAGE_PATTERN = re.compile(r"^[a-f0-9]{32}\.webp$")
 SITE_STORAGE_PATTERN = re.compile(r"^(home|login)-[a-f0-9]{32}\.webp$")
 SITE_IMAGE_SLOTS = frozenset({"home", "login"})
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
-Image.MAX_IMAGE_PIXELS = 80_000_000
+HARD_MAX_IMAGE_PIXELS = 12_000_000
+Image.MAX_IMAGE_PIXELS = HARD_MAX_IMAGE_PIXELS
+IMAGE_PROCESSING_LOCK = threading.Lock()
 
 
 class InvalidImage(ValueError):
@@ -31,9 +35,7 @@ def _paths(storage_name: str) -> tuple[Path, Path]:
     )
 
 
-def _save_webp(image: Image.Image, destination: Path, max_size: tuple[int, int], quality: int) -> None:
-    output = image.copy()
-    output.thumbnail(max_size, Image.Resampling.LANCZOS)
+def _save_webp(image: Image.Image, destination: Path, quality: int) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     file_descriptor, temporary_name = tempfile.mkstemp(
         prefix="fabula-",
@@ -43,7 +45,7 @@ def _save_webp(image: Image.Image, destination: Path, max_size: tuple[int, int],
     os.close(file_descriptor)
     temporary_path = Path(temporary_name)
     try:
-        output.save(
+        image.save(
             temporary_path,
             "WEBP",
             quality=quality,
@@ -55,28 +57,44 @@ def _save_webp(image: Image.Image, destination: Path, max_size: tuple[int, int],
         temporary_path.unlink(missing_ok=True)
 
 
+def _validate_image_header(opened: Image.Image) -> None:
+    if opened.format not in ALLOWED_FORMATS:
+        raise InvalidImage(translate("仅支持 JPEG、PNG 和 WebP 图片"))
+    if (
+        opened.width > current_app.config["MAX_IMAGE_DIMENSION"]
+        or opened.height > current_app.config["MAX_IMAGE_DIMENSION"]
+        or opened.width * opened.height > current_app.config["MAX_IMAGE_PIXELS"]
+    ):
+        raise InvalidImage(translate("图片像素数量超过安全处理限制"))
+
+
+def _normalized_image(opened: Image.Image) -> Image.Image:
+    image = ImageOps.exif_transpose(opened)
+    image.load()
+    if image.width < 32 or image.height < 32:
+        raise InvalidImage(translate("图片尺寸过小"))
+    if image.mode not in {"RGB", "RGBA"}:
+        image = image.convert("RGB")
+    if image.mode == "RGBA":
+        background = Image.new("RGB", image.size, "#e9e8e2")
+        background.paste(image, mask=image.getchannel("A"))
+        image = background
+    return image
+
+
 def process_image(stream) -> dict:
     storage_name = f"{uuid.uuid4().hex}.webp"
     original_path, thumb_path = _paths(storage_name)
     try:
-        with Image.open(stream) as opened:
-            if opened.format not in ALLOWED_FORMATS:
-                raise InvalidImage(translate("仅支持 JPEG、PNG 和 WebP 图片"))
-            if opened.width * opened.height > Image.MAX_IMAGE_PIXELS:
-                raise InvalidImage(translate("图片像素数量超过安全处理限制"))
-            image = ImageOps.exif_transpose(opened)
-            image.load()
-            if image.width < 32 or image.height < 32:
-                raise InvalidImage(translate("图片尺寸过小"))
-            if image.mode not in {"RGB", "RGBA"}:
-                image = image.convert("RGB")
-            if image.mode == "RGBA":
-                background = Image.new("RGB", image.size, "#e9e8e2")
-                background.paste(image, mask=image.getchannel("A"))
-                image = background
-            width, height = image.size
-            _save_webp(image, original_path, (2400, 2400), 84)
-            _save_webp(image, thumb_path, (1000, 1000), 78)
+        with IMAGE_PROCESSING_LOCK:
+            with Image.open(stream) as opened:
+                _validate_image_header(opened)
+                image = _normalized_image(opened)
+                width, height = image.size
+                image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
+                _save_webp(image, original_path, 84)
+                image.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
+                _save_webp(image, thumb_path, 78)
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         original_path.unlink(missing_ok=True)
         thumb_path.unlink(missing_ok=True)
@@ -100,23 +118,13 @@ def process_site_image(stream, slot: str) -> dict:
     storage_name = f"{slot}-{uuid.uuid4().hex}.webp"
     destination = Path(current_app.config["SITE_MEDIA_ROOT"]) / storage_name
     try:
-        with Image.open(stream) as opened:
-            if opened.format not in ALLOWED_FORMATS:
-                raise InvalidImage(translate("仅支持 JPEG、PNG 和 WebP 图片"))
-            if opened.width * opened.height > Image.MAX_IMAGE_PIXELS:
-                raise InvalidImage(translate("图片像素数量超过安全处理限制"))
-            image = ImageOps.exif_transpose(opened)
-            image.load()
-            if image.width < 32 or image.height < 32:
-                raise InvalidImage(translate("图片尺寸过小"))
-            if image.mode not in {"RGB", "RGBA"}:
-                image = image.convert("RGB")
-            if image.mode == "RGBA":
-                background = Image.new("RGB", image.size, "#e9e8e2")
-                background.paste(image, mask=image.getchannel("A"))
-                image = background
-            width, height = image.size
-            _save_webp(image, destination, (2400, 2400), 84)
+        with IMAGE_PROCESSING_LOCK:
+            with Image.open(stream) as opened:
+                _validate_image_header(opened)
+                image = _normalized_image(opened)
+                width, height = image.size
+                image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
+                _save_webp(image, destination, 84)
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         destination.unlink(missing_ok=True)
         raise InvalidImage(translate("图片文件无效或无法安全处理")) from error
@@ -144,3 +152,69 @@ def delete_site_media(storage_name: str | None) -> None:
     if not storage_name or not SITE_STORAGE_PATTERN.fullmatch(storage_name):
         return
     (Path(current_app.config["SITE_MEDIA_ROOT"]) / storage_name).unlink(missing_ok=True)
+
+
+def queue_media_deletion(connection, storage_name: str | None, media_kind: str) -> None:
+    valid = (
+        media_kind == "photo"
+        and storage_name is not None
+        and STORAGE_PATTERN.fullmatch(storage_name)
+    ) or (
+        media_kind == "site"
+        and storage_name is not None
+        and SITE_STORAGE_PATTERN.fullmatch(storage_name)
+    )
+    if not valid:
+        return
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO media_cleanup_queue (storage_name, media_kind)
+        VALUES (?, ?)
+        """,
+        (storage_name, media_kind),
+    )
+
+
+def drain_media_deletions(limit: int = 100) -> int:
+    connection = get_db()
+    rows = connection.execute(
+        """
+        SELECT storage_name, media_kind
+        FROM media_cleanup_queue
+        ORDER BY created_at, storage_name
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    completed = 0
+    for row in rows:
+        try:
+            if row["media_kind"] == "photo":
+                delete_media(row["storage_name"])
+            else:
+                delete_site_media(row["storage_name"])
+        except OSError as error:
+            connection.execute(
+                """
+                UPDATE media_cleanup_queue
+                SET attempts = attempts + 1, last_error = ?
+                WHERE storage_name = ? AND media_kind = ?
+                """,
+                (str(error)[:500], row["storage_name"], row["media_kind"]),
+            )
+            connection.commit()
+            current_app.logger.warning(
+                "Deferred media cleanup for %s",
+                row["storage_name"],
+            )
+            continue
+        connection.execute(
+            """
+            DELETE FROM media_cleanup_queue
+            WHERE storage_name = ? AND media_kind = ?
+            """,
+            (row["storage_name"], row["media_kind"]),
+        )
+        connection.commit()
+        completed += 1
+    return completed

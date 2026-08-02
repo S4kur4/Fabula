@@ -6,9 +6,13 @@ services:
       - "127.0.0.1:5002:5000"
     environment:
       FABULA_DATA_DIR: /app/var
-      FABULA_SECURE_COOKIE: ${FABULA_SECURE_COOKIE:-false}
+      FABULA_ENV: ${FABULA_ENV:-production}
+      FABULA_SECURE_COOKIE: ${FABULA_SECURE_COOKIE:-true}
       FABULA_TRUST_PROXY_HEADERS: ${FABULA_TRUST_PROXY_HEADERS:-false}
       FABULA_MAX_UPLOAD_MB: ${FABULA_MAX_UPLOAD_MB:-25}
+      FABULA_MAX_IMAGE_PIXELS: ${FABULA_MAX_IMAGE_PIXELS:-12000000}
+      FABULA_MAX_IMAGE_DIMENSION: ${FABULA_MAX_IMAGE_DIMENSION:-12000}
+      FABULA_TEMPORARY_PASSWORD_TTL_SECONDS: ${FABULA_TEMPORARY_PASSWORD_TTL_SECONDS:-900}
       FABULA_TURNSTILE_SITE_KEY: ${FABULA_TURNSTILE_SITE_KEY:-}
       FABULA_TURNSTILE_SECRET_KEY: ${FABULA_TURNSTILE_SECRET_KEY:-}
       FABULA_TURNSTILE_EXPECTED_HOSTNAMES: ${FABULA_TURNSTILE_EXPECTED_HOSTNAMES:-}
@@ -22,8 +26,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    mem_limit: 512m
+    pids_limit: 128
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/readyz', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -146,32 +146,55 @@ def login_fingerprint(username: str) -> str:
     return hmac.new(secret, payload, hashlib.sha256).hexdigest()
 
 
-def login_is_limited(fingerprint: str) -> bool:
+def reserve_login_attempt(fingerprint: str) -> bool:
     now = int(time.time())
     cutoff = now - current_app.config["LOGIN_WINDOW_SECONDS"]
     connection = get_db()
-    connection.execute("DELETE FROM login_attempts WHERE attempted_at < ?", (cutoff,))
-    count = connection.execute(
-        "SELECT COUNT(*) FROM login_attempts WHERE fingerprint = ? AND attempted_at >= ?",
-        (fingerprint, cutoff),
-    ).fetchone()[0]
-    connection.commit()
-    return count >= current_app.config["LOGIN_MAX_ATTEMPTS"]
-
-
-def record_failed_login(fingerprint: str) -> None:
-    connection = get_db()
-    connection.execute(
-        "INSERT INTO login_attempts (fingerprint, attempted_at) VALUES (?, ?)",
-        (fingerprint, int(time.time())),
-    )
-    connection.commit()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "DELETE FROM login_attempts WHERE attempted_at < ?",
+            (cutoff,),
+        )
+        count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM login_attempts
+            WHERE fingerprint = ? AND attempted_at >= ?
+            """,
+            (fingerprint, cutoff),
+        ).fetchone()[0]
+        if count >= current_app.config["LOGIN_MAX_ATTEMPTS"]:
+            connection.commit()
+            return False
+        connection.execute(
+            "INSERT INTO login_attempts (fingerprint, attempted_at) VALUES (?, ?)",
+            (fingerprint, now),
+        )
+        connection.commit()
+        return True
+    except Exception:
+        connection.rollback()
+        raise
 
 
 def clear_failed_logins(fingerprint: str) -> None:
     connection = get_db()
     connection.execute("DELETE FROM login_attempts WHERE fingerprint = ?", (fingerprint,))
     connection.commit()
+
+
+def issue_temporary_password() -> tuple[str, int]:
+    password = secrets.token_urlsafe(24)
+    expires_at = int(time.time()) + current_app.config["TEMPORARY_PASSWORD_TTL_SECONDS"]
+    return password, expires_at
+
+
+def temporary_password_is_valid(user) -> bool:
+    if not user["must_change_password"]:
+        return True
+    expires_at = user["temporary_password_expires_at"]
+    return expires_at is not None and expires_at > int(time.time())
 
 
 def audit(action: str, target_user_id: int | None = None, details: dict | None = None) -> None:

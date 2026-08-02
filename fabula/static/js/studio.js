@@ -13,6 +13,7 @@
   const photoDialog = document.querySelector("#photo-dialog");
   const userDialog = document.querySelector("#user-dialog");
   const resetDialog = document.querySelector("#reset-password-dialog");
+  const temporaryCredentialDialog = document.querySelector("#temporary-credential-dialog");
   const t = window.Fabula.t;
   const selected = new Set();
   let albumFilter = "all";
@@ -386,10 +387,13 @@
       return;
     }
     const bounds = target.getBoundingClientRect();
-    target.parentElement.insertBefore(
-      draggedOrderRow,
-      event.clientY > bounds.top + bounds.height / 2 ? target.nextElementSibling : target,
-    );
+    const reference = event.clientY > bounds.top + bounds.height / 2
+      ? target.nextElementSibling
+      : target;
+    if (reference === draggedOrderRow || draggedOrderRow.nextElementSibling === reference) {
+      return;
+    }
+    target.parentElement.insertBefore(draggedOrderRow, reference);
     refreshInlineOrderRows();
   });
 
@@ -538,6 +542,13 @@
       current: succeeded,
       total: files.length,
     });
+    if (uploadPreviewUrl) {
+      URL.revokeObjectURL(uploadPreviewUrl);
+      uploadPreviewUrl = "";
+      const preview = document.querySelector("#upload-preview");
+      preview.removeAttribute("src");
+      preview.hidden = true;
+    }
     if (succeeded) {
       window.Fabula.noticeAfterReload(
         t("{count} 张照片已加入你的档案", { count: succeeded }),
@@ -1173,6 +1184,37 @@
     }
   }
 
+  function showTemporaryCredential(username, password, expiresIn) {
+    const minutes = Math.max(1, Math.ceil(Number(expiresIn) / 60));
+    document.querySelector("#temporary-credential-impact").textContent = t(
+      "用户 {username} 的临时密码将在 {minutes} 分钟后失效。",
+      { username, minutes },
+    );
+    document.querySelector("#generated-temporary-password").value = password;
+    window.Fabula.openDialog(temporaryCredentialDialog);
+  }
+
+  temporaryCredentialDialog?.addEventListener("close", () => {
+    document.querySelector("#generated-temporary-password").value = "";
+  });
+
+  document.querySelector("#copy-temporary-password")?.addEventListener("click", async () => {
+    const input = document.querySelector("#generated-temporary-password");
+    let copied = false;
+    try {
+      await window.navigator.clipboard.writeText(input.value);
+      copied = true;
+    } catch {
+      input.select();
+      copied = Boolean(document.execCommand?.("copy"));
+      input.setSelectionRange(0, 0);
+    }
+    window.Fabula.showToast(
+      copied ? t("临时密码已复制") : t("复制失败，请手动保存临时密码"),
+      copied ? "success" : "error",
+    );
+  });
+
   function openUserEditor(user = null) {
     document.querySelector("#editing-user-id").value = user ? String(user.id) : "";
     document.querySelector("#user-dialog-title").textContent = user
@@ -1182,8 +1224,7 @@
     document.querySelector("#user-username").disabled = Boolean(user);
     document.querySelector("#user-display-name").value = user?.display_name || "";
     document.querySelector("#user-role").value = user?.role || "photographer";
-    document.querySelector("#temporary-password-field").hidden = Boolean(user);
-    document.querySelector("#user-temporary-password").value = "welcome-2026";
+    document.querySelector("#new-user-password-impact").hidden = Boolean(user);
     errorText(document.querySelector("#user-error"));
     window.Fabula.openDialog(userDialog);
   }
@@ -1197,15 +1238,22 @@
       username: document.querySelector("#user-username").value,
       display_name: document.querySelector("#user-display-name").value,
       role: document.querySelector("#user-role").value,
-      temporary_password: document.querySelector("#user-temporary-password").value,
     };
     try {
-      await window.Fabula.api(id ? `/api/admin/users/${id}` : "/api/admin/users", {
+      const payload = await window.Fabula.api(id ? `/api/admin/users/${id}` : "/api/admin/users", {
         method: id ? "PATCH" : "POST",
         body: jsonBody(values),
       });
       window.Fabula.closeDialog(userDialog);
-      window.Fabula.showToast(id ? t("用户资料已更新") : t("用户已创建"));
+      if (id) {
+        window.Fabula.showToast(t("用户资料已更新"));
+      } else {
+        showTemporaryCredential(
+          payload.user.username,
+          payload.temporary_password,
+          payload.temporary_password_expires_in,
+        );
+      }
       if (Number(id) === currentUserId && values.role !== "admin") {
         window.location.assign("/studio");
         return;
@@ -1235,7 +1283,6 @@
         "将撤销 {name} 的现有会话，并要求下次登录时修改密码。",
         { name: user.display_name },
       );
-      document.querySelector("#reset-temporary-password").value = "temporary-2026";
       errorText(document.querySelector("#reset-password-error"));
       window.Fabula.openDialog(resetDialog);
       return;
@@ -1288,17 +1335,18 @@
     try {
       const payload = await window.Fabula.api(`/api/admin/users/${id}/reset-password`, {
         method: "POST",
-        body: jsonBody({ temporary_password: document.querySelector("#reset-temporary-password").value }),
+        body: jsonBody({}),
       });
       window.Fabula.closeDialog(resetDialog);
-      window.Fabula.showToast(payload.message);
+      showTemporaryCredential(
+        payload.user.username,
+        payload.temporary_password,
+        payload.temporary_password_expires_in,
+      );
       loadUsers();
     } catch (error) {
       errorText(document.querySelector("#reset-password-error"), error.message);
     }
   });
 
-  if (isAdmin && app.dataset.activeTab === "users") {
-    loadUsers();
-  }
 })();

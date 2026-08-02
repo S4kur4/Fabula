@@ -18,7 +18,13 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db
 from .i18n import SUPPORTED_LOCALES, translate
-from .media import InvalidImage, delete_media, process_image
+from .media import (
+    InvalidImage,
+    delete_media,
+    drain_media_deletions,
+    process_image,
+    queue_media_deletion,
+)
 from .security import (
     api_error,
     audit,
@@ -32,6 +38,7 @@ from .settings import get_site_copy
 
 
 bp = Blueprint("studio", __name__, url_prefix="/studio")
+MAX_BULK_DELETE_IDS = 500
 
 
 def album_rows(user_id: int) -> list[dict]:
@@ -158,14 +165,10 @@ def about_data(user_id: int) -> dict:
 
 def photo_revision(user_id: int) -> str:
     row = get_db().execute(
-        """
-        SELECT COUNT(*) AS total, COALESCE(MAX(updated_at), '') AS latest
-        FROM photos
-        WHERE user_id = ?
-        """,
+        "SELECT revision FROM photo_revisions WHERE user_id = ?",
         (user_id,),
     ).fetchone()
-    return f"{row['total']}:{row['latest']}"
+    return str(row["revision"] if row is not None else 0)
 
 
 @bp.get("")
@@ -394,6 +397,8 @@ def delete_album(album_id: int):
         (album_id, g.user["id"]),
     ).fetchall()
     if delete_photos:
+        for photo in photos:
+            queue_media_deletion(connection, photo["storage_name"], "photo")
         connection.execute(
             "DELETE FROM photos WHERE album_id = ? AND user_id = ?",
             (album_id, g.user["id"]),
@@ -413,8 +418,7 @@ def delete_album(album_id: int):
     )
     connection.commit()
     if delete_photos:
-        for photo in photos:
-            delete_media(photo["storage_name"])
+        drain_media_deletions()
         return jsonify(
             {
                 "success": True,
@@ -561,18 +565,21 @@ def update_photo(photo_id: int):
 @password_ready
 def delete_photo(photo_id: int):
     connection = get_db()
+    connection.execute("BEGIN IMMEDIATE")
     photo = connection.execute(
         "SELECT storage_name FROM photos WHERE id = ? AND user_id = ?",
         (photo_id, g.user["id"]),
     ).fetchone()
     if photo is None:
+        connection.rollback()
         return api_error(translate("照片不存在或不属于当前用户"), 404)
+    queue_media_deletion(connection, photo["storage_name"], "photo")
     connection.execute(
         "DELETE FROM photos WHERE id = ? AND user_id = ?",
         (photo_id, g.user["id"]),
     )
     connection.commit()
-    delete_media(photo["storage_name"])
+    drain_media_deletions()
     return jsonify({"success": True, "message": translate("照片已删除")})
 
 
@@ -580,14 +587,31 @@ def delete_photo(photo_id: int):
 @password_ready
 def bulk_delete():
     values = request.get_json(silent=True) or {}
-    identifiers = values.get("ids", [])
-    if not isinstance(identifiers, list) or not identifiers:
+    raw_identifiers = values.get("ids", [])
+    if not isinstance(raw_identifiers, list) or not raw_identifiers:
         return api_error(translate("请选择需要删除的照片"))
-    identifiers = [int(value) for value in identifiers if str(value).isdigit()]
-    if not identifiers:
-        return api_error(translate("请选择需要删除的照片"))
+    if len(raw_identifiers) > MAX_BULK_DELETE_IDS:
+        return api_error(
+            translate(
+                "一次最多删除 {count} 张照片",
+                count=MAX_BULK_DELETE_IDS,
+            ),
+            413,
+        )
+    identifiers = []
+    seen = set()
+    for value in raw_identifiers:
+        if isinstance(value, bool) or not str(value).isdigit():
+            return api_error(translate("照片编号无效"))
+        identifier = int(value)
+        if identifier <= 0:
+            return api_error(translate("照片编号无效"))
+        if identifier not in seen:
+            identifiers.append(identifier)
+            seen.add(identifier)
     placeholders = ",".join("?" for _ in identifiers)
     connection = get_db()
+    connection.execute("BEGIN IMMEDIATE")
     rows = connection.execute(
         f"""
         SELECT id, storage_name FROM photos
@@ -596,6 +620,7 @@ def bulk_delete():
         [g.user["id"], *identifiers],
     ).fetchall()
     if not rows:
+        connection.rollback()
         return api_error(translate("没有可删除的照片"), 404)
     owned_ids = [row["id"] for row in rows]
     owned_placeholders = ",".join("?" for _ in owned_ids)
@@ -603,9 +628,10 @@ def bulk_delete():
         f"DELETE FROM photos WHERE user_id = ? AND id IN ({owned_placeholders})",
         [g.user["id"], *owned_ids],
     )
-    connection.commit()
     for row in rows:
-        delete_media(row["storage_name"])
+        queue_media_deletion(connection, row["storage_name"], "photo")
+    connection.commit()
+    drain_media_deletions()
     return jsonify({"success": True, "deleted": len(rows)})
 
 
@@ -680,7 +706,8 @@ def change_password():
     connection.execute(
         """
         UPDATE users
-        SET password_hash = ?, must_change_password = 0, status = 'active',
+        SET password_hash = ?, must_change_password = 0,
+            temporary_password_expires_at = NULL, status = 'active',
             session_version = session_version + 1,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?

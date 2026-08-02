@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     must_change_password INTEGER NOT NULL DEFAULT 1
         CHECK (must_change_password IN (0, 1)),
+    temporary_password_expires_at INTEGER
+        CHECK (temporary_password_expires_at IS NULL OR temporary_password_expires_at >= 0),
     initial_admin INTEGER NOT NULL DEFAULT 0
         CHECK (initial_admin IN (0, 1)),
     session_version INTEGER NOT NULL DEFAULT 1,
@@ -90,6 +92,25 @@ CREATE TABLE IF NOT EXISTS audit_events (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS photo_revisions (
+    user_id INTEGER PRIMARY KEY,
+    revision INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS media_cleanup_queue (
+    storage_name TEXT NOT NULL,
+    media_kind TEXT NOT NULL CHECK (media_kind IN ('photo', 'site')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (storage_name, media_kind)
+);
+
 CREATE INDEX IF NOT EXISTS idx_albums_user ON albums(user_id);
 CREATE INDEX IF NOT EXISTS idx_photos_user_created ON photos(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_photos_album ON photos(album_id);
@@ -97,6 +118,30 @@ CREATE INDEX IF NOT EXISTS idx_photos_status_created ON photos(status, created_a
 CREATE INDEX IF NOT EXISTS idx_login_attempts_fingerprint_time
     ON login_attempts(fingerprint, attempted_at);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS photos_revision_after_insert
+AFTER INSERT ON photos
+BEGIN
+    INSERT INTO photo_revisions (user_id, revision)
+    VALUES (NEW.user_id, 1)
+    ON CONFLICT(user_id) DO UPDATE SET revision = revision + 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS photos_revision_after_update
+AFTER UPDATE ON photos
+BEGIN
+    INSERT INTO photo_revisions (user_id, revision)
+    VALUES (NEW.user_id, 1)
+    ON CONFLICT(user_id) DO UPDATE SET revision = revision + 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS photos_revision_after_delete
+AFTER DELETE ON photos
+BEGIN
+    INSERT INTO photo_revisions (user_id, revision)
+    VALUES (OLD.user_id, 1)
+    ON CONFLICT(user_id) DO UPDATE SET revision = revision + 1;
+END;
 """
 
 
@@ -123,24 +168,27 @@ def close_db(_error: BaseException | None = None) -> None:
         connection.close()
 
 
-def init_db() -> None:
-    connection = get_db()
-    connection.executescript(SCHEMA)
-    user_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()
+def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
     }
-    if "locale" not in user_columns:
-        connection.execute(
-            """
-            ALTER TABLE users
-            ADD COLUMN locale TEXT NOT NULL DEFAULT 'zh-CN'
-                CHECK (locale IN ('zh-CN', 'en'))
-            """
-        )
-    photo_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(photos)").fetchall()
-    }
-    if "album_position" not in photo_columns:
+
+
+def _migration_user_locale(connection: sqlite3.Connection) -> None:
+    if "locale" in _column_names(connection, "users"):
+        return
+    connection.execute(
+        """
+        ALTER TABLE users
+        ADD COLUMN locale TEXT NOT NULL DEFAULT 'zh-CN'
+            CHECK (locale IN ('zh-CN', 'en'))
+        """
+    )
+
+
+def _migration_album_position(connection: sqlite3.Connection) -> None:
+    if "album_position" not in _column_names(connection, "photos"):
         connection.execute(
             """
             ALTER TABLE photos
@@ -170,7 +218,65 @@ def init_db() -> None:
         ON photos(album_id, album_position, id)
         """
     )
-    connection.commit()
+
+
+def _migration_temporary_password_expiry(connection: sqlite3.Connection) -> None:
+    if "temporary_password_expires_at" in _column_names(connection, "users"):
+        return
+    connection.execute(
+        """
+        ALTER TABLE users
+        ADD COLUMN temporary_password_expires_at INTEGER
+            CHECK (temporary_password_expires_at IS NULL OR temporary_password_expires_at >= 0)
+        """
+    )
+
+
+def _migration_revision_and_cleanup_tables(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        INSERT INTO photo_revisions (user_id, revision)
+        SELECT user_id, COUNT(*)
+        FROM photos
+        GROUP BY user_id
+        ON CONFLICT(user_id) DO NOTHING
+        """
+    )
+
+
+MIGRATIONS = (
+    (1, _migration_user_locale),
+    (2, _migration_album_position),
+    (3, _migration_temporary_password_expiry),
+    (4, _migration_revision_and_cleanup_tables),
+)
+
+
+def _apply_migrations(connection: sqlite3.Connection) -> None:
+    applied = {
+        row["version"]
+        for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
+    }
+    for version, migration in MIGRATIONS:
+        if version in applied:
+            continue
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            migration(connection)
+            connection.execute(
+                "INSERT INTO schema_migrations (version) VALUES (?)",
+                (version,),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+
+def init_db() -> None:
+    connection = get_db()
+    connection.executescript(SCHEMA)
+    _apply_migrations(connection)
 
 
 def init_app(app) -> None:

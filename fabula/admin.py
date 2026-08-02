@@ -9,14 +9,16 @@ from .media import (
     SITE_IMAGE_SLOTS,
     InvalidImage,
     delete_site_media,
+    drain_media_deletions,
     process_site_image,
+    queue_media_deletion,
 )
 from .security import (
     admin_required,
     api_error,
     audit,
+    issue_temporary_password,
     refresh_current_user,
-    valid_password,
     valid_username,
 )
 from .settings import (
@@ -53,7 +55,14 @@ def content_counts(user_id: int) -> dict:
 
 
 def serialize_user(row) -> dict:
-    counts = content_counts(row["id"])
+    if "photo_count" in row.keys():
+        counts = {
+            "photos": row["photo_count"],
+            "albums": row["album_count"],
+            "about": row["about_count"],
+        }
+    else:
+        counts = content_counts(row["id"])
     return {
         "id": row["id"],
         "username": row["username"],
@@ -95,7 +104,32 @@ def remove_site_media_safely(storage_name: str | None) -> None:
 @bp.get("/users")
 @admin_required
 def list_users():
-    rows = get_db().execute("SELECT * FROM users ORDER BY id").fetchall()
+    rows = get_db().execute(
+        """
+        SELECT
+            u.*,
+            COALESCE(p.photo_count, 0) AS photo_count,
+            COALESCE(a.album_count, 0) AS album_count,
+            COALESCE(b.about_count, 0) AS about_count
+        FROM users u
+        LEFT JOIN (
+            SELECT user_id, COUNT(*) AS photo_count
+            FROM photos
+            GROUP BY user_id
+        ) p ON p.user_id = u.id
+        LEFT JOIN (
+            SELECT user_id, COUNT(*) AS album_count
+            FROM albums
+            GROUP BY user_id
+        ) a ON a.user_id = u.id
+        LEFT JOIN (
+            SELECT user_id, COUNT(*) AS about_count
+            FROM about_blocks
+            GROUP BY user_id
+        ) b ON b.user_id = u.id
+        ORDER BY u.id
+        """
+    ).fetchall()
     return jsonify({"items": [serialize_user(row) for row in rows]})
 
 
@@ -106,29 +140,28 @@ def create_user():
     username = str(values.get("username", "")).strip()
     display_name = str(values.get("display_name", "")).strip()[:80]
     role = str(values.get("role", "photographer"))
-    temporary_password = str(values.get("temporary_password", ""))
     if not valid_username(username):
         return api_error(translate("用户名需为 3 到 32 位字母、数字、点或下划线"))
     if not display_name:
         return api_error(translate("公开显示名称不能为空"))
     if role not in {"photographer", "admin"}:
         return api_error(translate("用户角色无效"))
-    if not valid_password(temporary_password):
-        return api_error(translate("临时密码至少 12 个字符，并同时包含字母和数字"))
+    temporary_password, expires_at = issue_temporary_password()
     connection = get_db()
     try:
         cursor = connection.execute(
             """
             INSERT INTO users (
                 username, display_name, role, status, password_hash,
-                must_change_password, initial_admin
-            ) VALUES (?, ?, ?, 'pending', ?, 1, 0)
+                must_change_password, temporary_password_expires_at, initial_admin
+            ) VALUES (?, ?, ?, 'pending', ?, 1, ?, 0)
             """,
             (
                 username,
                 display_name,
                 role,
                 generate_password_hash(temporary_password),
+                expires_at,
             ),
         )
     except Exception as error:
@@ -144,7 +177,16 @@ def create_user():
     user = connection.execute(
         "SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)
     ).fetchone()
-    return jsonify({"success": True, "user": serialize_user(user)})
+    return jsonify(
+        {
+            "success": True,
+            "user": serialize_user(user),
+            "temporary_password": temporary_password,
+            "temporary_password_expires_in": current_app.config[
+                "TEMPORARY_PASSWORD_TTL_SECONDS"
+            ],
+        }
+    )
 
 
 @bp.patch("/users/<int:user_id>")
@@ -240,10 +282,7 @@ def update_status(user_id: int):
 def reset_password(user_id: int):
     if user_id == g.user["id"]:
         return api_error(translate("请在账户安全页面修改自己的密码"), 409)
-    values = request.get_json(silent=True) or {}
-    temporary_password = str(values.get("temporary_password", ""))
-    if not valid_password(temporary_password):
-        return api_error(translate("临时密码至少 12 个字符，并同时包含字母和数字"))
+    temporary_password, expires_at = issue_temporary_password()
     connection = get_db()
     target = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if target is None:
@@ -252,15 +291,30 @@ def reset_password(user_id: int):
         """
         UPDATE users
         SET password_hash = ?, must_change_password = 1,
+            temporary_password_expires_at = ?,
             session_version = session_version + 1,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?
         """,
-        (generate_password_hash(temporary_password), user_id),
+        (generate_password_hash(temporary_password), expires_at, user_id),
     )
     audit("user.password_reset", target_user_id=user_id)
     connection.commit()
-    return jsonify({"success": True, "message": translate("一次性临时密码已设置")})
+    target = connection.execute(
+        "SELECT * FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    return jsonify(
+        {
+            "success": True,
+            "message": translate("一次性临时密码已设置"),
+            "temporary_password": temporary_password,
+            "temporary_password_expires_in": current_app.config[
+                "TEMPORARY_PASSWORD_TTL_SECONDS"
+            ],
+            "user": serialize_user(target),
+        }
+    )
 
 
 @bp.delete("/users/<int:user_id>")
@@ -343,6 +397,7 @@ def update_site_image(slot: str):
         connection.execute("BEGIN IMMEDIATE")
         previous = get_site_images()[slot]
         save_site_image(slot, processed["storage_name"])
+        queue_media_deletion(connection, previous, "site")
         audit(
             "site_image.updated",
             details={
@@ -358,7 +413,7 @@ def update_site_image(slot: str):
         remove_site_media_safely(processed["storage_name"])
         raise
 
-    remove_site_media_safely(previous)
+    drain_media_deletions()
     message = translate("首页照片已更新" if slot == "home" else "登录页照片已更新")
     return jsonify(
         {
@@ -380,12 +435,13 @@ def reset_site_image(slot: str):
         previous = get_site_images()[slot]
         if previous:
             save_site_image(slot, None)
+            queue_media_deletion(connection, previous, "site")
             audit("site_image.reset", details={"slot": slot})
         connection.commit()
     except Exception:
         connection.rollback()
         raise
-    remove_site_media_safely(previous)
+    drain_media_deletions()
     message = translate(
         "首页照片已恢复默认" if slot == "home" else "登录页照片已恢复默认"
     )

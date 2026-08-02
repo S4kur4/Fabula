@@ -83,6 +83,18 @@ def public_albums() -> list[dict]:
 def public_profiles() -> list[dict]:
     rows = get_db().execute(
         """
+        WITH ranked_photos AS (
+            SELECT
+                user_id,
+                storage_name,
+                COUNT(*) OVER (PARTITION BY user_id) AS photo_count,
+                ROW_NUMBER() OVER (
+                    PARTITION BY user_id
+                    ORDER BY created_at DESC, id DESC
+                ) AS row_number
+            FROM photos
+            WHERE status = 'ready'
+        )
         SELECT
             u.id,
             u.display_name,
@@ -91,20 +103,12 @@ def public_profiles() -> list[dict]:
             ab.signature,
             ab.gear_json,
             ab.contact_json,
-            (
-                SELECT storage_name
-                FROM photos
-                WHERE user_id = u.id AND status = 'ready'
-                ORDER BY created_at DESC, id DESC
-                LIMIT 1
-            ) AS cover_name,
-            (
-                SELECT COUNT(*)
-                FROM photos
-                WHERE user_id = u.id AND status = 'ready'
-            ) AS photo_count
+            rp.storage_name AS cover_name,
+            COALESCE(rp.photo_count, 0) AS photo_count
         FROM users u
         JOIN about_blocks ab ON ab.user_id = u.id
+        LEFT JOIN ranked_photos rp
+            ON rp.user_id = u.id AND rp.row_number = 1
         WHERE trim(ab.title) <> '' OR trim(ab.bio) <> ''
         ORDER BY u.id
         """

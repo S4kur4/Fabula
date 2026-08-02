@@ -486,8 +486,8 @@
             <label for="user-role">{{ t("角色") }}</label>
             <select id="user-role"><option value="photographer">{{ t("普通摄影师") }}</option><option value="admin">{{ t("管理员") }}</option></select>
           </div>
-          <div class="form-field" id="temporary-password-field"><label for="user-temporary-password">{{ t("一次性临时密码") }}</label><input id="user-temporary-password" type="password" value="welcome-2026"></div>
         </div>
+        <p class="role-impact" id="new-user-password-impact">{{ t("创建后，系统会生成一组仅显示一次、限时有效的临时密码。") }}</p>
         <p class="role-impact">{{ t("管理员可以治理用户与站点设置，但不会获得其他摄影师内容的编辑权。") }}</p>
         <p class="form-error" id="user-error" role="alert"></p>
         <div class="modal-actions">
@@ -503,11 +503,28 @@
         <h2>{{ t("设置临时密码") }}</h2>
         <input id="reset-user-id" type="hidden">
         <p class="role-impact" id="reset-password-impact"></p>
-        <div class="form-field"><label for="reset-temporary-password">{{ t("一次性临时密码") }}</label><input id="reset-temporary-password" type="password" value="temporary-2026" required></div>
+        <p class="role-impact">{{ t("系统会生成新的限时临时密码，并只在确认后显示一次。") }}</p>
         <p class="form-error" id="reset-password-error" role="alert"></p>
         <div class="modal-actions">
           <button class="paper-button" type="button" data-close-dialog="reset-password-dialog">{{ t("取消") }}</button>
           <button class="ink-button" type="submit">{{ t("确认重置") }}</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="dialog is-narrow" id="temporary-credential-dialog" aria-labelledby="temporary-credential-title">
+      <form class="modal-form">
+        <button class="dialog-close" type="button" data-close-dialog="temporary-credential-dialog" aria-label="{{ t('关闭') }}">×</button>
+        <h2 id="temporary-credential-title">{{ t("保存一次性临时密码") }}</h2>
+        <p class="role-impact" id="temporary-credential-impact"></p>
+        <div class="form-field">
+          <label for="generated-temporary-password">{{ t("一次性临时密码") }}</label>
+          <input id="generated-temporary-password" type="text" readonly autocomplete="off">
+        </div>
+        <p class="role-impact">{{ t("关闭后将无法再次查看。请通过安全渠道交给对应用户。") }}</p>
+        <div class="modal-actions">
+          <button class="paper-button" id="copy-temporary-password" type="button">{{ t("复制密码") }}</button>
+          <button class="ink-button" type="button" data-close-dialog="temporary-credential-dialog">{{ t("我已安全保存") }}</button>
         </div>
       </form>
     </dialog>

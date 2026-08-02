@@ -55,11 +55,16 @@ docker compose run --rm web flask --app wsgi reset-admin-password
 默认只监听宿主机 `127.0.0.1:5002`。生产环境建议在前方配置 HTTPS 反向代理，并设置：
 
 ```dotenv
+FABULA_ENV=production
 FABULA_SECURE_COOKIE=true
 FABULA_TRUST_PROXY_HEADERS=true
 ```
 
-只有在反向代理会清理并重新写入 `X-Forwarded-For` 时才启用 `FABULA_TRUST_PROXY_HEADERS`。容器默认只读、丢弃 Linux capabilities，并启用 `no-new-privileges`。仅 `/app/var` 和临时目录可写。
+生产模式会拒绝在 `FABULA_SECURE_COOKIE=false` 时启动。只有在反向代理会清理并重新写入 `X-Forwarded-For` 时才启用 `FABULA_TRUST_PROXY_HEADERS`。容器默认只读、丢弃 Linux capabilities，并启用 `no-new-privileges`。仅 `/app/var` 和临时目录可写。`/healthz` 只表示进程存活，Compose 使用 `/readyz` 同时检查数据库与数据目录是否可用。
+
+新建账号和管理员重置账号时，临时密码由服务端随机生成，只显示一次，默认在 15 分钟后失效。可通过 `FABULA_TEMPORARY_PASSWORD_TTL_SECONDS` 调整为 60 至 86400 秒。升级后，历史上尚未完成首次改密且没有有效期记录的临时密码会被拒绝；管理员需要重新生成临时密码，初始管理员则可使用 `reset-admin-password` 命令恢复。
+
+图片处理默认限制为 1200 万像素、单边不超过 12000 像素，并在单个进程内串行处理，避免多个大图同时占用内存。可以通过 `FABULA_MAX_IMAGE_PIXELS` 和 `FABULA_MAX_IMAGE_DIMENSION` 进一步降低限制，但不能提高到内置安全上限以上。Compose 同时限制容器为 512 MiB 内存和 128 个进程。
 
 ### Cloudflare Turnstile
 
