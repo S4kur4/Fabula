@@ -133,7 +133,7 @@
           </div>
           <div class="manage-photo-list" id="manage-photo-list">
             {% for photo in photos %}
-              <article class="manage-photo {{ 'is-published' if photo.album_status == 'published' }}" data-managed-photo="{{ photo.id }}" data-album-id="{{ photo.album_id or '' }}" data-album-status="{{ photo.album_status or '' }}">
+              <article class="manage-photo" data-managed-photo="{{ photo.id }}" data-album-id="{{ photo.album_id or '' }}" data-album-status="{{ photo.album_status or '' }}">
                 <input class="select-box" type="checkbox" data-select-photo="{{ photo.id }}" aria-label="{{ t('选择《{title}》', title=photo.title or t('未命名照片')) }}" {{ "disabled" if photo.album_status == "published" }}>
                 <div class="manage-photo-core">
                   {% if photo.thumb_url %}

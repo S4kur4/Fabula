@@ -164,6 +164,12 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("每一种声音都保留自己的方向", html)
         self.assertNotIn("data-lightbox-fullscreen", html)
 
+    def test_empty_public_album_uses_upload_copy(self):
+        response = self.client.get("/")
+        html = response.get_data(as_text=True)
+        self.assertIn("上传作品后，它们会出现在这里。", html)
+        self.assertNotIn("摄影师发布作品后，它们会出现在这里。", html)
+
     def test_album_publication_controls_public_feed_and_media_access(self):
         storage_name = "a" * 32 + ".webp"
         original = self.data_root / "media" / "original" / storage_name
@@ -609,6 +615,7 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn("data-context-publication", html)
         self.assertIn('data-album-status="draft"', html)
         self.assertNotIn('class="status-text"', html)
+        self.assertNotIn('class="manage-photo is-published"', html)
 
     def test_language_switch_is_saved_and_keeps_custom_content_unchanged(self):
         token = self.login("user.one", "user-password-2026")

@@ -155,7 +155,7 @@
     } else {
       title.textContent = albumName;
       description.textContent = activeAlbumPublished
-        ? t("这部作品已公开。撤回发布后才能继续调整内容和顺序。")
+        ? t("这部作品已公开，撤回发布后才能继续调整内容和顺序。")
         : t(
           "这里只显示“{name}”中的 {count} 张照片，确认完整后即可正式发布。",
           { name: albumName, count: photoCount },
@@ -187,16 +187,15 @@
     inlineOrderActive = isSelectedAlbum;
     inlineOrderEditable = isSelectedAlbum && !activeAlbumPublished;
     list?.classList.toggle("is-ordering", inlineOrderEditable);
-    list?.classList.toggle("is-published-album", activeAlbumPublished);
     listHead?.classList.toggle("is-ordering", inlineOrderEditable);
     if (loadMore) {
       loadMore.hidden = isSelectedAlbum;
     }
     if (isSelectedAlbum) {
-      orderStatus.hidden = false;
+      orderStatus.hidden = activeAlbumPublished;
       orderStatus.dataset.state = "idle";
       orderStatus.textContent = activeAlbumPublished
-        ? t("摄影集已发布，撤回发布后才能修改内容和顺序")
+        ? ""
         : t("拖动手柄或使用箭头调整顺序，修改会自动保存");
       loadInlineAlbumOrder(albumFilter);
     } else {
@@ -376,7 +375,7 @@
         const note = document.createElement("p");
         empty.className = "empty-state";
         heading.textContent = t("这个摄影集还是空的");
-        note.textContent = t("摄影师发布作品后，它们会出现在这里。");
+        note.textContent = t("上传作品后，它们会出现在这里。");
         empty.append(heading, note);
         list.append(empty);
       } else {
@@ -384,12 +383,15 @@
       }
       clearSelection();
       refreshInlineOrderRows();
-      setInlineOrderStatus(
-        restoredMessage || (activeAlbumPublished
-          ? t("摄影集已发布，撤回发布后才能修改内容和顺序")
-          : t("拖动手柄或使用箭头调整顺序，修改会自动保存")),
-        restoredMessage ? "error" : "idle",
-      );
+      if (restoredMessage) {
+        setInlineOrderStatus(restoredMessage, "error");
+      } else if (activeAlbumPublished) {
+        const status = document.querySelector("#inline-order-status");
+        status.hidden = true;
+        status.textContent = "";
+      } else {
+        setInlineOrderStatus(t("拖动手柄或使用箭头调整顺序，修改会自动保存"));
+      }
     } catch (error) {
       if (token !== inlineOrderLoadToken) {
         return;
@@ -700,7 +702,6 @@
     row.dataset.managedPhoto = String(photo.id);
     row.dataset.albumId = photo.album_id === null ? "" : String(photo.album_id);
     row.dataset.albumStatus = photo.album_status || "";
-    row.classList.toggle("is-published", photo.album_status === "published");
     row.hidden = !rowMatchesAlbum(row, albumFilter);
 
     checkbox.className = "select-box";

@@ -273,7 +273,7 @@
         const note = document.createElement("p");
         empty.className = "empty-state";
         heading.textContent = t("这个摄影集还是空的");
-        note.textContent = t("摄影师发布作品后，它们会出现在这里。");
+        note.textContent = t("上传作品后，它们会出现在这里。");
         empty.append(heading, note);
         galleryGrid.append(empty);
       }
