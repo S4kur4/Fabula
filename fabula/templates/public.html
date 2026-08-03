@@ -40,6 +40,7 @@
               class="hero-image"
               src="{{ site_images.home.url }}"
               alt="{{ t('首页主视觉') if site_images.home.custom else (photos[0].title or t('Fabula 摄影作品')) }}"
+              draggable="false"
               fetchpriority="high"
             >
           {% else %}
@@ -84,6 +85,7 @@
                   loading="{{ 'eager' if loop.index <= 3 else 'lazy' }}"
                   width="{{ photo.width }}"
                   height="{{ photo.height }}"
+                  draggable="false"
                 >
               </button>
               <div class="photo-caption {{ 'is-untitled' if not photo.title }}">
@@ -123,7 +125,7 @@
           {% for profile in profiles %}
             <article class="photographer-profile reveal">
               {% if profile.cover_url %}
-                <img class="profile-image" src="{{ profile.cover_url }}" alt="{{ t('{name}的摄影作品', name=profile.display_name) }}">
+                <img class="profile-image" src="{{ profile.cover_url }}" alt="{{ t('{name}的摄影作品', name=profile.display_name) }}" draggable="false">
               {% else %}
                 <div class="profile-image profile-image-empty">{{ t("等待作品") }}</div>
               {% endif %}
@@ -173,7 +175,7 @@
   <dialog class="lightbox" id="lightbox">
     <div class="lightbox-layout">
       <div class="lightbox-media">
-        <img id="lightbox-image" alt="">
+        <img id="lightbox-image" alt="" draggable="false">
       </div>
       <div class="lightbox-copy">
         <button class="dialog-close" type="button" data-close-dialog="lightbox" aria-label="{{ t('关闭照片故事') }}">×</button>

@@ -163,6 +163,14 @@ class FabulaTestCase(unittest.TestCase):
         self.assertEqual(html.count("影像版权归各自摄影师所有"), 2)
         self.assertNotIn("每一种声音都保留自己的方向", html)
         self.assertNotIn("data-lightbox-fullscreen", html)
+        self.assertIn('draggable="false"', html)
+
+        public_css_response = self.client.get("/static/css/app.css")
+        public_css = public_css_response.get_data(as_text=True)
+        public_css_response.close()
+        self.assertIn(".public-site button,", public_css)
+        self.assertIn(".public-site img {", public_css)
+        self.assertNotIn(".public-site {\n  -webkit-user-select: none", public_css)
 
     def test_empty_public_album_uses_upload_copy(self):
         response = self.client.get("/")

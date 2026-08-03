@@ -184,6 +184,19 @@ img {
   max-width: 100%;
 }
 
+.public-site button,
+.public-site .site-header,
+.public-site .text-link {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.public-site img {
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 ::selection {
   background: var(--accent);
   color: var(--accent-contrast);

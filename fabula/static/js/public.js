@@ -121,6 +121,7 @@
         button.setAttribute("aria-label", t("查看第 {index} 张照片", { index: index + 1 }));
         image.src = item.thumb_url;
         image.alt = "";
+        image.draggable = false;
         button.append(image);
         button.addEventListener("click", () => {
           lightboxIndex = index;
@@ -223,6 +224,7 @@
       photographer: photo.photographer,
     });
     image.loading = "lazy";
+    image.draggable = false;
     image.width = photo.width;
     image.height = photo.height;
     caption.className = "photo-caption";
