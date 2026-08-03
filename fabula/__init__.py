@@ -202,10 +202,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         latest_photo = (
             db.get_db().execute(
                 """
-                SELECT storage_name
-                FROM photos
-                WHERE status = 'ready'
-                ORDER BY created_at DESC, id DESC
+                SELECT p.storage_name
+                FROM photos p
+                JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
+                WHERE p.status = 'ready' AND a.status = 'published'
+                ORDER BY p.created_at DESC, p.id DESC
                 LIMIT 1
                 """
             ).fetchone()

@@ -20,6 +20,8 @@
   let users = [];
   let uploadPreviewUrl = "";
   let inlineOrderActive = false;
+  let inlineOrderEditable = false;
+  let activeAlbumPublished = false;
   let inlineOrderLoadToken = 0;
   let draggedOrderRow = null;
   let dragStartOrder = [];
@@ -118,15 +120,29 @@
     const albumName = activeButton.dataset.albumName || t("全部照片");
     const photoCount = Number(activeButton.dataset.albumPhotoCount || 0);
     const isSelectedAlbum = albumFilter !== "all" && albumFilter !== "uncategorized";
+    const albumStatus = isSelectedAlbum ? activeButton.dataset.albumStatus || "draft" : "";
+    activeAlbumPublished = albumStatus === "published";
     const actionMode = isSelectedAlbum
       ? "selected"
       : albumFilter === "uncategorized" ? "uncategorized" : "general";
     document.querySelectorAll("[data-album-actions]").forEach((group) => {
       group.hidden = group.dataset.albumActions !== actionMode;
     });
+    document.querySelectorAll("[data-requires-draft]").forEach((control) => {
+      control.hidden = activeAlbumPublished;
+    });
 
     const title = document.querySelector("#photo-panel-title");
     const description = document.querySelector("#photo-panel-description");
+    const publicationBadge = document.querySelector("#album-publication-badge");
+    const publicationButton = document.querySelector("[data-context-publication]");
+    publicationBadge.hidden = !isSelectedAlbum;
+    publicationBadge.dataset.status = albumStatus;
+    publicationBadge.textContent = activeAlbumPublished ? t("已发布") : t("未发布");
+    if (publicationButton) {
+      publicationButton.dataset.publicationTarget = activeAlbumPublished ? "draft" : "published";
+      publicationButton.textContent = activeAlbumPublished ? t("撤回发布") : t("发布摄影集");
+    }
     if (albumFilter === "all") {
       title.textContent = t("全部照片");
       description.textContent = t("这里汇总你拥有的全部照片。其他摄影师的内容不会出现在你的工作台中。");
@@ -138,15 +154,21 @@
       );
     } else {
       title.textContent = albumName;
-      description.textContent = t(
-        "这里只显示“{name}”中的 {count} 张照片，右侧操作均只作用于本摄影集。",
-        { name: albumName, count: photoCount },
-      );
+      description.textContent = activeAlbumPublished
+        ? t("这部作品已公开。撤回发布后才能继续调整内容和顺序。")
+        : t(
+          "这里只显示“{name}”中的 {count} 张照片，确认完整后即可正式发布。",
+          { name: albumName, count: photoCount },
+        );
     }
 
     const uploadAlbum = document.querySelector("#upload-album");
     const uploadTarget = uploadAlbum?.closest(".upload-target");
     const uploadTitle = document.querySelector("#upload-title");
+    const uploadZone = document.querySelector("#upload-zone");
+    if (uploadZone) {
+      uploadZone.hidden = activeAlbumPublished;
+    }
     if (uploadAlbum) {
       uploadAlbum.value = isSelectedAlbum ? albumFilter : "";
       uploadAlbum.disabled = albumFilter !== "all";
@@ -162,19 +184,24 @@
     const listHead = document.querySelector(".photo-list-head");
     const orderStatus = document.querySelector("#inline-order-status");
     const loadMore = document.querySelector("#studio-load-more");
-    list?.classList.toggle("is-ordering", isSelectedAlbum);
-    listHead?.classList.toggle("is-ordering", isSelectedAlbum);
+    inlineOrderActive = isSelectedAlbum;
+    inlineOrderEditable = isSelectedAlbum && !activeAlbumPublished;
+    list?.classList.toggle("is-ordering", inlineOrderEditable);
+    list?.classList.toggle("is-published-album", activeAlbumPublished);
+    listHead?.classList.toggle("is-ordering", inlineOrderEditable);
     if (loadMore) {
       loadMore.hidden = isSelectedAlbum;
     }
     if (isSelectedAlbum) {
-      inlineOrderActive = true;
       orderStatus.hidden = false;
       orderStatus.dataset.state = "idle";
-      orderStatus.textContent = t("拖动手柄或使用箭头调整顺序，修改会自动保存");
+      orderStatus.textContent = activeAlbumPublished
+        ? t("摄影集已发布，撤回发布后才能修改内容和顺序")
+        : t("拖动手柄或使用箭头调整顺序，修改会自动保存");
       loadInlineAlbumOrder(albumFilter);
     } else {
       inlineOrderActive = false;
+      inlineOrderEditable = false;
       inlineOrderLoadToken += 1;
       orderStatus.hidden = true;
       orderStatus.textContent = "";
@@ -230,6 +257,48 @@
     }
   });
 
+  document.querySelector("[data-context-publication]")?.addEventListener("click", async (event) => {
+    const album = albumButton(albumFilter);
+    if (!album || albumFilter === "all" || albumFilter === "uncategorized") {
+      return;
+    }
+    const targetStatus = event.currentTarget.dataset.publicationTarget;
+    const photoCount = Number(album.dataset.albumPhotoCount || 0);
+    if (targetStatus === "published" && photoCount === 0) {
+      window.Fabula.showToast(t("空摄影集不能发布，请先加入照片"), "error");
+      return;
+    }
+    const confirmed = window.confirm(
+      targetStatus === "published"
+        ? t("发布摄影集“{name}”及其中 {count} 张照片？", {
+          name: album.dataset.albumName,
+          count: photoCount,
+        })
+        : t("撤回摄影集“{name}”？公开网站将立即隐藏其中的照片。", {
+          name: album.dataset.albumName,
+        }),
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      const payload = await window.Fabula.api(
+        `/studio/api/albums/${albumFilter}/publication`,
+        {
+          method: "PATCH",
+          body: jsonBody({ status: targetStatus }),
+        },
+      );
+      if (payload.photo_revision) {
+        app.dataset.photoRevision = payload.photo_revision;
+      }
+      window.Fabula.noticeAfterReload(payload.message, "success", false);
+      window.location.assign(photosUrl(albumFilter));
+    } catch (error) {
+      window.Fabula.showToast(error.message, "error");
+    }
+  });
+
   function inlineOrderRows() {
     return [...document.querySelectorAll("#manage-photo-list [data-managed-photo]")];
   }
@@ -252,6 +321,7 @@
     rows.forEach((row, index) => {
       const photo = rowData(row);
       const title = photo.title || t("未命名照片");
+      const locked = row.dataset.albumStatus === "published";
       const control = row.querySelector("[data-photo-order-control]");
       const up = control.querySelector('[data-order-move="-1"]');
       const down = control.querySelector('[data-order-move="1"]');
@@ -260,9 +330,13 @@
         position: index + 1,
         title,
       }));
-      control.querySelector("[data-order-handle]").title = t("拖动《{title}》调整顺序", { title });
-      up.disabled = saving || index === 0;
-      down.disabled = saving || index === rows.length - 1;
+      const handle = control.querySelector("[data-order-handle]");
+      handle.draggable = inlineOrderEditable && !locked;
+      handle.title = locked
+        ? t("撤回发布后才能调整顺序")
+        : t("拖动《{title}》调整顺序", { title });
+      up.disabled = locked || saving || index === 0;
+      down.disabled = locked || saving || index === rows.length - 1;
       up.setAttribute("aria-label", t("上移《{title}》", { title }));
       down.setAttribute("aria-label", t("下移《{title}》", { title }));
     });
@@ -311,7 +385,9 @@
       clearSelection();
       refreshInlineOrderRows();
       setInlineOrderStatus(
-        restoredMessage || t("拖动手柄或使用箭头调整顺序，修改会自动保存"),
+        restoredMessage || (activeAlbumPublished
+          ? t("摄影集已发布，撤回发布后才能修改内容和顺序")
+          : t("拖动手柄或使用箭头调整顺序，修改会自动保存")),
         restoredMessage ? "error" : "idle",
       );
     } catch (error) {
@@ -329,7 +405,7 @@
 
   async function saveInlineAlbumOrder(albumId) {
     const list = document.querySelector("#manage-photo-list");
-    if (list.classList.contains("is-saving")) {
+    if (!inlineOrderEditable || list.classList.contains("is-saving")) {
       return;
     }
     list.classList.add("is-saving");
@@ -348,7 +424,7 @@
       }
       setInlineOrderStatus(payload.message);
       orderStatusTimer = window.setTimeout(() => {
-        if (inlineOrderActive && albumFilter === String(albumId)) {
+        if (inlineOrderEditable && albumFilter === String(albumId)) {
           setInlineOrderStatus(t("拖动手柄或使用箭头调整顺序，修改会自动保存"));
         }
       }, 1800);
@@ -365,7 +441,7 @@
 
   managedPhotoList?.addEventListener("dragstart", (event) => {
     const handle = event.target.closest("[data-order-handle]");
-    if (!handle || !inlineOrderActive) {
+    if (!handle || !inlineOrderEditable) {
       event.preventDefault();
       return;
     }
@@ -421,7 +497,7 @@
 
   managedPhotoList?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-order-move]");
-    if (!button || !inlineOrderActive) {
+    if (!button || !inlineOrderEditable) {
       return;
     }
     const row = button.closest("[data-managed-photo]");
@@ -617,18 +693,20 @@
     const story = document.createElement("p");
     const fileMeta = document.createElement("small");
     const albumSelect = document.createElement("select");
-    const status = document.createElement("span");
     const edit = document.createElement("button");
     const data = document.createElement("div");
 
     row.className = "manage-photo";
     row.dataset.managedPhoto = String(photo.id);
     row.dataset.albumId = photo.album_id === null ? "" : String(photo.album_id);
+    row.dataset.albumStatus = photo.album_status || "";
+    row.classList.toggle("is-published", photo.album_status === "published");
     row.hidden = !rowMatchesAlbum(row, albumFilter);
 
     checkbox.className = "select-box";
     checkbox.type = "checkbox";
     checkbox.dataset.selectPhoto = String(photo.id);
+    checkbox.disabled = photo.album_status === "published";
     checkbox.setAttribute(
       "aria-label",
       t("选择《{title}》", { title: photo.title || t("未命名照片") }),
@@ -659,27 +737,24 @@
       const option = document.createElement("option");
       option.value = sourceOption.value;
       option.textContent = sourceOption.textContent;
+      option.disabled = sourceOption.disabled;
       option.selected = option.value === (photo.album_id === null ? "" : String(photo.album_id));
       albumSelect.append(option);
     });
 
-    status.className = "status-text";
-    status.textContent = {
-      ready: t("已发布"),
-      processing: t("处理中"),
-      failed: t("处理失败"),
-    }[photo.status] || t("未知状态");
+    albumSelect.disabled = photo.album_status === "published";
     edit.className = "row-action";
     edit.type = "button";
     edit.dataset.photoEdit = String(photo.id);
     edit.textContent = t("编辑或删除");
+    edit.disabled = photo.album_status === "published";
     data.className = "photo-data";
     data.hidden = true;
     data.dataset.title = photo.title || "";
     data.dataset.story = photo.story || "";
     data.dataset.album = photo.album_id === null ? "" : String(photo.album_id);
     data.dataset.thumb = photo.thumb_url || "";
-    row.append(checkbox, orderControl, core, albumSelect, status, edit, data);
+    row.append(checkbox, orderControl, core, albumSelect, edit, data);
     return row;
   }
 
@@ -866,7 +941,7 @@
   });
 
   document.querySelector("[data-select-visible]")?.addEventListener("click", () => {
-    document.querySelectorAll("[data-managed-photo]:not([hidden]) [data-select-photo]").forEach((checkbox) => {
+    document.querySelectorAll("[data-managed-photo]:not([hidden]) [data-select-photo]:not(:disabled)").forEach((checkbox) => {
       checkbox.checked = true;
       selected.add(Number(checkbox.dataset.selectPhoto));
     });
@@ -875,7 +950,7 @@
 
   document.querySelectorAll("[data-context-select-photos]").forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll("[data-managed-photo]:not([hidden]) [data-select-photo]").forEach((checkbox) => {
+      document.querySelectorAll("[data-managed-photo]:not([hidden]) [data-select-photo]:not(:disabled)").forEach((checkbox) => {
         checkbox.checked = true;
         selected.add(Number(checkbox.dataset.selectPhoto));
       });

@@ -39,8 +39,12 @@
               <span>{{ t("全部照片") }}</span><small>{{ photo_total }}</small>
             </button>
             {% for album in albums %}
-              <button class="album-nav-button" type="button" data-owned-album="{{ album.id }}" data-album-name="{{ album.name }}" data-album-photo-count="{{ album.photo_count }}">
-                <span>{{ album.name }}</span><small>{{ album.photo_count }}</small>
+              <button class="album-nav-button" type="button" data-owned-album="{{ album.id }}" data-album-name="{{ album.name }}" data-album-photo-count="{{ album.photo_count }}" data-album-status="{{ album.status }}">
+                <span>{{ album.name }}</span>
+                <span class="album-nav-meta">
+                  <em data-album-status-label>{{ t("已发布") if album.status == "published" else t("未发布") }}</em>
+                  <small>{{ album.photo_count }}</small>
+                </span>
               </button>
             {% endfor %}
             <button class="album-nav-button" type="button" data-owned-album="uncategorized" data-album-name="{{ t('未分类') }}" data-album-photo-count="{{ uncategorized_total }}">
@@ -71,7 +75,10 @@
         <section class="studio-panel" data-studio-panel="photos">
           <header class="studio-titlebar">
             <div>
-              <h1 id="photo-panel-title">{{ t("全部照片") }}</h1>
+              <div class="album-title-line">
+                <h1 id="photo-panel-title">{{ t("全部照片") }}</h1>
+                <span class="album-publication-badge" id="album-publication-badge" hidden></span>
+              </div>
               <p id="photo-panel-description">{{ t("这里只显示{name}拥有的内容。其他摄影师的摄影集不会出现在归类选项中。", name=current_user.display_name) }}</p>
             </div>
             <div class="studio-title-actions">
@@ -79,9 +86,10 @@
                 <button class="paper-button" type="button" data-open-album>{{ t("新建摄影集") }}</button>
               </div>
               <div class="album-context-actions" data-album-actions="selected" hidden>
-                <button class="paper-button" type="button" data-context-rename-album>{{ t("修改名称") }}</button>
-                <button class="paper-button" type="button" data-context-select-photos>{{ t("批量删除照片") }}</button>
-                <button class="danger-button" type="button" data-context-delete-album>{{ t("删除摄影集") }}</button>
+                <button class="ink-button" type="button" data-context-publication></button>
+                <button class="paper-button" type="button" data-context-rename-album data-requires-draft>{{ t("修改名称") }}</button>
+                <button class="paper-button" type="button" data-context-select-photos data-requires-draft>{{ t("批量删除照片") }}</button>
+                <button class="danger-button" type="button" data-context-delete-album data-requires-draft>{{ t("删除摄影集") }}</button>
               </div>
               <div class="album-context-actions" data-album-actions="uncategorized" hidden>
                 <button class="paper-button" type="button" data-context-select-photos>{{ t("批量删除照片") }}</button>
@@ -100,7 +108,7 @@
               <span>{{ t("上传到") }}</span>
               <select id="upload-album">
                 <option value="">{{ t("未分类") }}</option>
-                {% for album in albums %}<option value="{{ album.id }}">{{ album.name }}</option>{% endfor %}
+                {% for album in albums %}<option value="{{ album.id }}" {{ "disabled" if album.status == "published" }}>{{ album.name }}{{ t("（已发布）") if album.status == "published" }}</option>{% endfor %}
               </select>
             </label>
             <div class="upload-status" id="upload-status" hidden>
@@ -121,12 +129,12 @@
 
           <p class="inline-order-status" id="inline-order-status" aria-live="polite" hidden></p>
           <div class="photo-list-head" aria-hidden="true">
-            <span></span><span class="photo-order-heading">{{ t("顺序") }}</span><span>{{ t("照片与故事") }}</span><span>{{ t("摄影集") }}</span><span>{{ t("状态") }}</span><span>{{ t("操作") }}</span>
+            <span></span><span class="photo-order-heading">{{ t("顺序") }}</span><span>{{ t("照片与故事") }}</span><span>{{ t("摄影集") }}</span><span>{{ t("操作") }}</span>
           </div>
           <div class="manage-photo-list" id="manage-photo-list">
             {% for photo in photos %}
-              <article class="manage-photo" data-managed-photo="{{ photo.id }}" data-album-id="{{ photo.album_id or '' }}">
-                <input class="select-box" type="checkbox" data-select-photo="{{ photo.id }}" aria-label="{{ t('选择《{title}》', title=photo.title or t('未命名照片')) }}">
+              <article class="manage-photo {{ 'is-published' if photo.album_status == 'published' }}" data-managed-photo="{{ photo.id }}" data-album-id="{{ photo.album_id or '' }}" data-album-status="{{ photo.album_status or '' }}">
+                <input class="select-box" type="checkbox" data-select-photo="{{ photo.id }}" aria-label="{{ t('选择《{title}》', title=photo.title or t('未命名照片')) }}" {{ "disabled" if photo.album_status == "published" }}>
                 <div class="manage-photo-core">
                   {% if photo.thumb_url %}
                     <img src="{{ photo.thumb_url }}" alt="">
@@ -142,11 +150,10 @@
                 <select class="inline-select" data-photo-album="{{ photo.id }}" aria-label="{{ t('调整照片所属摄影集') }}">
                   <option value="" {{ "selected" if photo.album_id is none }}>{{ t("未分类") }}</option>
                   {% for album in albums %}
-                    <option value="{{ album.id }}" {{ "selected" if photo.album_id == album.id }}>{{ album.name }}</option>
+                    <option value="{{ album.id }}" {{ "selected" if photo.album_id == album.id }} {{ "disabled" if album.status == "published" and photo.album_id != album.id }}>{{ album.name }}{{ t("（已发布）") if album.status == "published" }}</option>
                   {% endfor %}
                 </select>
-                <span class="status-text">{{ t({"ready": "已发布", "processing": "处理中", "failed": "处理失败"}.get(photo.status, "未知状态")) }}</span>
-                <button class="row-action" type="button" data-photo-edit="{{ photo.id }}">{{ t("编辑或删除") }}</button>
+                <button class="row-action" type="button" data-photo-edit="{{ photo.id }}" {{ "disabled" if photo.album_status == "published" }}>{{ t("编辑或删除") }}</button>
                 <div class="photo-data" hidden
                   data-title="{{ photo.title }}"
                   data-story="{{ photo.story }}"
@@ -462,7 +469,7 @@
       <div class="form-field"><label for="photo-story">{{ t("故事背景") }}</label><textarea id="photo-story" maxlength="1200"></textarea></div>
       <div class="form-field">
         <label for="photo-album">{{ t("所属摄影集") }}</label>
-        <select id="photo-album"><option value="">{{ t("未分类") }}</option>{% for album in albums %}<option value="{{ album.id }}">{{ album.name }}</option>{% endfor %}</select>
+        <select id="photo-album"><option value="">{{ t("未分类") }}</option>{% for album in albums %}<option value="{{ album.id }}" {{ "disabled" if album.status == "published" }}>{{ album.name }}{{ t("（已发布）") if album.status == "published" }}</option>{% endfor %}</select>
       </div>
       <p class="form-error" id="photo-error" role="alert"></p>
       <div class="modal-actions">

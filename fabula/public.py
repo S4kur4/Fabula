@@ -7,6 +7,7 @@ from flask import (
     Blueprint,
     Response,
     abort,
+    g,
     jsonify,
     render_template,
     request,
@@ -41,7 +42,7 @@ def serialize_photo(row) -> dict:
 
 def public_photos(album_id: int | None, limit: int, offset: int) -> list[dict]:
     parameters: list[object] = []
-    where = ["p.status = 'ready'"]
+    where = ["p.status = 'ready'", "a.status = 'published'"]
     order_by = "p.created_at DESC, p.id DESC"
     if album_id is not None:
         where.append("p.album_id = ?")
@@ -56,7 +57,7 @@ def public_photos(album_id: int | None, limit: int, offset: int) -> list[dict]:
         SELECT p.*, u.display_name AS photographer, a.name AS album_name
         FROM photos p
         JOIN users u ON u.id = p.user_id
-        LEFT JOIN albums a ON a.id = p.album_id
+        JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
         WHERE {" AND ".join(where)}
         ORDER BY {order_by}
         LIMIT ? OFFSET ?
@@ -72,7 +73,11 @@ def public_albums() -> list[dict]:
         SELECT a.id, a.name, u.display_name AS photographer, COUNT(p.id) AS photo_count
         FROM albums a
         JOIN users u ON u.id = a.user_id
-        JOIN photos p ON p.album_id = a.id AND p.status = 'ready'
+        JOIN photos p
+            ON p.album_id = a.id
+            AND p.user_id = a.user_id
+            AND p.status = 'ready'
+        WHERE a.status = 'published'
         GROUP BY a.id
         ORDER BY a.created_at, a.id
         """
@@ -85,15 +90,16 @@ def public_profiles() -> list[dict]:
         """
         WITH ranked_photos AS (
             SELECT
-                user_id,
-                storage_name,
-                COUNT(*) OVER (PARTITION BY user_id) AS photo_count,
+                p.user_id,
+                p.storage_name,
+                COUNT(*) OVER (PARTITION BY p.user_id) AS photo_count,
                 ROW_NUMBER() OVER (
-                    PARTITION BY user_id
-                    ORDER BY created_at DESC, id DESC
+                    PARTITION BY p.user_id
+                    ORDER BY p.created_at DESC, p.id DESC
                 ) AS row_number
-            FROM photos
-            WHERE status = 'ready'
+            FROM photos p
+            JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
+            WHERE p.status = 'ready' AND a.status = 'published'
         )
         SELECT
             u.id,
@@ -158,7 +164,12 @@ def structured_item(value: object) -> dict:
 def index():
     photos = public_photos(album_id=None, limit=24, offset=0)
     total = get_db().execute(
-        "SELECT COUNT(*) FROM photos WHERE status = 'ready'"
+        """
+        SELECT COUNT(*)
+        FROM photos p
+        JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
+        WHERE p.status = 'ready' AND a.status = 'published'
+        """
     ).fetchone()[0]
     return render_template(
         "public.html",
@@ -178,12 +189,17 @@ def photo_feed():
     album_id = request.args.get("album_id", type=int)
     items = public_photos(album_id=album_id, limit=limit, offset=offset)
     count_parameters: list[object] = []
-    count_where = ["status = 'ready'"]
+    count_where = ["p.status = 'ready'", "a.status = 'published'"]
     if album_id is not None:
-        count_where.append("album_id = ?")
+        count_where.append("p.album_id = ?")
         count_parameters.append(album_id)
     total = get_db().execute(
-        f"SELECT COUNT(*) FROM photos WHERE {' AND '.join(count_where)}",
+        f"""
+        SELECT COUNT(*)
+        FROM photos p
+        JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
+        WHERE {' AND '.join(count_where)}
+        """,
         count_parameters,
     ).fetchone()[0]
     next_offset = offset + len(items)
@@ -201,13 +217,34 @@ def media_file(variant: str, storage_name: str):
     if variant not in {"original", "thumbs"} or not STORAGE_PATTERN.fullmatch(storage_name):
         abort(404)
     row = get_db().execute(
-        "SELECT status FROM photos WHERE storage_name = ?",
+        """
+        SELECT p.status, p.user_id, a.status AS album_status
+        FROM photos p
+        LEFT JOIN albums a ON a.id = p.album_id AND a.user_id = p.user_id
+        WHERE p.storage_name = ?
+        """,
         (storage_name,),
     ).fetchone()
     if row is None or row["status"] != "ready":
         abort(404)
+    publicly_available = row["album_status"] == "published"
+    owned_by_current_user = (
+        getattr(g, "user", None) is not None and g.user["id"] == row["user_id"]
+    )
+    if not publicly_available and not owned_by_current_user:
+        abort(404)
     directory = current_media_directory(variant)
-    return send_from_directory(directory, storage_name, max_age=604800, conditional=True)
+    response = send_from_directory(
+        directory,
+        storage_name,
+        max_age=0,
+        conditional=True,
+    )
+    if publicly_available:
+        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+    else:
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @bp.get("/site-media/<slot>/<storage_name>")

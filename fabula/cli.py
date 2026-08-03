@@ -232,7 +232,10 @@ def seed_demo_command():
             if key in album_ids:
                 continue
             cursor = connection.execute(
-                "INSERT INTO albums (user_id, name) VALUES (?, ?)",
+                """
+                INSERT INTO albums (user_id, name, status, published_at)
+                VALUES (?, ?, 'published', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                """,
                 (user_ids[username], album_name),
             )
             album_ids[key] = cursor.lastrowid

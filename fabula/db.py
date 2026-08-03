@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS albums (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'published')),
+    published_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     UNIQUE (user_id, name),
@@ -244,11 +247,40 @@ def _migration_revision_and_cleanup_tables(connection: sqlite3.Connection) -> No
     )
 
 
+def _migration_album_publication(connection: sqlite3.Connection) -> None:
+    columns = _column_names(connection, "albums")
+    migrated_existing_albums = "status" not in columns
+    if migrated_existing_albums:
+        connection.execute(
+            """
+            ALTER TABLE albums
+            ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'published'))
+            """
+        )
+    if "published_at" not in columns:
+        connection.execute("ALTER TABLE albums ADD COLUMN published_at TEXT")
+    if migrated_existing_albums:
+        connection.execute(
+            """
+            UPDATE albums
+            SET status = 'published', published_at = COALESCE(updated_at, created_at)
+            """
+        )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_albums_status_created
+        ON albums(status, created_at, id)
+        """
+    )
+
+
 MIGRATIONS = (
     (1, _migration_user_locale),
     (2, _migration_album_position),
     (3, _migration_temporary_password_expiry),
     (4, _migration_revision_and_cleanup_tables),
+    (5, _migration_album_publication),
 )
 
 

@@ -141,6 +141,16 @@ class FabulaTestCase(unittest.TestCase):
         return self.client.open(path, method=method, headers=headers, **kwargs)
 
     def test_public_page_aggregates_ready_content_and_about(self):
+        with self.app.app_context():
+            get_db().execute(
+                """
+                UPDATE albums
+                SET status = 'published', published_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (self.album_one_id,),
+            )
+            get_db().commit()
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
@@ -154,9 +164,158 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("每一种声音都保留自己的方向", html)
         self.assertNotIn("data-lightbox-fullscreen", html)
 
+    def test_album_publication_controls_public_feed_and_media_access(self):
+        storage_name = "a" * 32 + ".webp"
+        original = self.data_root / "media" / "original" / storage_name
+        original.write_bytes(b"private-draft-image")
+        anonymous_client = self.app.test_client()
+
+        self.assertEqual(
+            anonymous_client.get("/api/public/photos").get_json()["total"],
+            0,
+        )
+        self.assertEqual(
+            anonymous_client.get(f"/media/original/{storage_name}").status_code,
+            404,
+        )
+
+        token = self.login("user.one", "user-password-2026")
+        private_media = self.client.get(f"/media/original/{storage_name}")
+        self.assertEqual(private_media.status_code, 200)
+        self.assertEqual(private_media.headers["Cache-Control"], "private, no-store")
+        private_media.close()
+
+        published = self.api(
+            "PATCH",
+            f"/studio/api/albums/{self.album_one_id}/publication",
+            token,
+            json={"status": "published"},
+        )
+        self.assertEqual(published.status_code, 200)
+        self.assertEqual(published.get_json()["album"]["status"], "published")
+        self.assertIsNotNone(published.get_json()["album"]["published_at"])
+        public_feed = anonymous_client.get("/api/public/photos").get_json()
+        self.assertEqual(public_feed["total"], 1)
+        self.assertEqual(public_feed["items"][0]["id"], self.photo_one_id)
+        public_media = anonymous_client.get(f"/media/original/{storage_name}")
+        self.assertEqual(public_media.status_code, 200)
+        self.assertEqual(
+            public_media.headers["Cache-Control"],
+            "public, max-age=0, must-revalidate",
+        )
+        public_media.close()
+
+        unpublished = self.api(
+            "PATCH",
+            f"/studio/api/albums/{self.album_one_id}/publication",
+            token,
+            json={"status": "draft"},
+        )
+        self.assertEqual(unpublished.status_code, 200)
+        self.assertEqual(unpublished.get_json()["album"]["status"], "draft")
+        self.assertIsNone(unpublished.get_json()["album"]["published_at"])
+        self.assertEqual(
+            anonymous_client.get("/api/public/photos").get_json()["total"],
+            0,
+        )
+        self.assertEqual(
+            anonymous_client.get(f"/media/original/{storage_name}").status_code,
+            404,
+        )
+
+    def test_new_album_is_draft_and_empty_album_cannot_be_published(self):
+        token = self.login("user.one", "user-password-2026")
+        created = self.api(
+            "POST",
+            "/studio/api/albums",
+            token,
+            json={"name": "尚未完成"},
+        )
+        self.assertEqual(created.status_code, 200)
+        album = created.get_json()["album"]
+        self.assertEqual(album["status"], "draft")
+        rejected = self.api(
+            "PATCH",
+            f"/studio/api/albums/{album['id']}/publication",
+            token,
+            json={"status": "published"},
+        )
+        self.assertEqual(rejected.status_code, 409)
+        self.assertIn("空摄影集不能发布", rejected.get_json()["message"])
+
+    def test_published_album_is_locked_and_foreign_album_stays_inaccessible(self):
+        token = self.login("user.one", "user-password-2026")
+        published = self.api(
+            "PATCH",
+            f"/studio/api/albums/{self.album_one_id}/publication",
+            token,
+            json={"status": "published"},
+        )
+        self.assertEqual(published.status_code, 200)
+
+        requests = (
+            self.api(
+                "PATCH",
+                f"/studio/api/albums/{self.album_one_id}",
+                token,
+                json={"name": "不应修改"},
+            ),
+            self.api(
+                "PUT",
+                f"/studio/api/albums/{self.album_one_id}/order",
+                token,
+                json={"photo_ids": [self.photo_one_id]},
+            ),
+            self.api(
+                "PATCH",
+                f"/studio/api/photos/{self.photo_one_id}",
+                token,
+                json={"title": "不应修改", "story": "", "album_id": self.album_one_id},
+            ),
+            self.api(
+                "DELETE",
+                f"/studio/api/photos/{self.photo_one_id}",
+                token,
+            ),
+            self.api(
+                "POST",
+                "/studio/api/photos/bulk-delete",
+                token,
+                json={"ids": [self.photo_one_id]},
+            ),
+            self.api(
+                "DELETE",
+                f"/studio/api/albums/{self.album_one_id}",
+                token,
+                json={"delete_photos": False},
+            ),
+        )
+        self.assertTrue(all(response.status_code == 409 for response in requests))
+
+        upload = self.api(
+            "POST",
+            "/studio/api/photos",
+            token,
+            data={
+                "album_id": str(self.album_one_id),
+                "photo": (BytesIO(b"not-an-image"), "test.jpg"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(upload.status_code, 409)
+
+        foreign = self.api(
+            "PATCH",
+            f"/studio/api/albums/{self.album_two_id}/publication",
+            token,
+            json={"status": "published"},
+        )
+        self.assertEqual(foreign.status_code, 404)
+
     def test_login_image_caption_is_removed_but_configurable_intro_remains(self):
         login_page = self.client.get("/login")
         login_html = login_page.get_data(as_text=True)
+        self.assertIn('class="site-header login-header"', login_html)
         self.assertIn('class="login-intro"', login_html)
         self.assertIn("进入只属于你的工作台", login_html)
         self.assertNotIn("整理照片，也是重新确认自己站在哪里。", login_html)
@@ -382,6 +541,14 @@ class FabulaTestCase(unittest.TestCase):
         self.assertEqual(saved.get_json()["message"], "照片顺序已保存")
         self.assertTrue(saved.get_json()["photo_revision"])
 
+        published = self.api(
+            "PATCH",
+            f"/studio/api/albums/{self.album_one_id}/publication",
+            token,
+            json={"status": "published"},
+        )
+        self.assertEqual(published.status_code, 200)
+
         public_feed = self.client.get(
             f"/api/public/photos?album_id={self.album_one_id}&limit=24"
         )
@@ -439,6 +606,9 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("sort-album-dialog", html)
         self.assertIn('id="inline-order-status"', html)
         self.assertIn('class="photo-order-heading">顺序</span>', html)
+        self.assertIn("data-context-publication", html)
+        self.assertIn('data-album-status="draft"', html)
+        self.assertNotIn('class="status-text"', html)
 
     def test_language_switch_is_saved_and_keeps_custom_content_unchanged(self):
         token = self.login("user.one", "user-password-2026")
@@ -924,7 +1094,7 @@ class FabulaTestCase(unittest.TestCase):
                     "SELECT version FROM schema_migrations"
                 ).fetchall()
             }
-        self.assertEqual(versions, {1, 2, 3, 4})
+        self.assertEqual(versions, {1, 2, 3, 4, 5})
 
     def test_admin_can_update_public_copy(self):
         token = self.login("admin.user", "admin-password-2026")
@@ -1358,11 +1528,16 @@ class ApplicationConfigurationTestCase(unittest.TestCase):
                 positions = database.execute(
                     "SELECT id, album_position FROM photos ORDER BY album_position"
                 ).fetchall()
+                migrated_album = database.execute(
+                    "SELECT status, published_at FROM albums WHERE id = 1"
+                ).fetchone()
                 self.assertIn("album_position", columns)
                 self.assertEqual(
                     [(row["id"], row["album_position"]) for row in positions],
                     [(2, 0), (1, 1)],
                 )
+                self.assertEqual(migrated_album["status"], "published")
+                self.assertIsNotNone(migrated_album["published_at"])
 
     def test_turnstile_keys_must_be_configured_together(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -8,9 +8,8 @@
 {% endblock %}
 {% block body_class %}login-page{% endblock %}
 {% block body %}
-  <header class="site-header">
+  <header class="site-header login-header">
     <a class="wordmark" href="{{ url_for('public.index') }}">{{ site_copy.site_title }}</a>
-    <div></div>
     <div class="header-actions">
       <a class="header-action" href="{{ url_for('public.index') }}">{{ t("作品") }}</a>
       <button class="theme-toggle" type="button" data-theme-toggle aria-label="{{ t('切换明暗主题') }}">{{ t("夜色") }}</button>
