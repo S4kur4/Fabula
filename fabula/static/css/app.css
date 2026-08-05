@@ -937,6 +937,8 @@ img {
   font-family: var(--display);
   font-size: 17px;
   line-height: 1.85;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .lightbox-controls {

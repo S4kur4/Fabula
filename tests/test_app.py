@@ -162,6 +162,10 @@ class FabulaTestCase(unittest.TestCase):
                 """,
                 (self.album_one_id,),
             )
+            get_db().execute(
+                "UPDATE photos SET story = ? WHERE id = ?",
+                ("第一段。\n\n第二段。", self.photo_one_id),
+            )
             get_db().commit()
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -176,12 +180,15 @@ class FabulaTestCase(unittest.TestCase):
         self.assertNotIn("每一种声音都保留自己的方向", html)
         self.assertNotIn("data-lightbox-fullscreen", html)
         self.assertIn('draggable="false"', html)
+        self.assertIn("第一段。\n\n第二段。", html)
 
         public_css_response = self.client.get("/static/css/app.css")
         public_css = public_css_response.get_data(as_text=True)
         public_css_response.close()
         self.assertIn(".public-site button,", public_css)
         self.assertIn(".public-site img {", public_css)
+        self.assertIn(".lightbox-story {", public_css)
+        self.assertIn("white-space: pre-wrap;", public_css)
         self.assertNotIn(".public-site {\n  -webkit-user-select: none", public_css)
 
     def test_empty_public_album_uses_upload_copy(self):
