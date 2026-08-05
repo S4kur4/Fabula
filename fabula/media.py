@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import current_app
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
 
 from .db import get_db
 from .i18n import translate
@@ -17,10 +18,17 @@ from .i18n import translate
 STORAGE_PATTERN = re.compile(r"^[a-f0-9]{32}\.webp$")
 SITE_STORAGE_PATTERN = re.compile(r"^(home|login)-[a-f0-9]{32}\.webp$")
 SITE_IMAGE_SLOTS = frozenset({"home", "login"})
-ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
+ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP", "HEIF"}
 HARD_MAX_IMAGE_PIXELS = 12_000_000
 Image.MAX_IMAGE_PIXELS = HARD_MAX_IMAGE_PIXELS
 IMAGE_PROCESSING_LOCK = threading.Lock()
+
+register_heif_opener(
+    thumbnails=False,
+    depth_images=False,
+    aux_images=False,
+    decode_threads=1,
+)
 
 
 class InvalidImage(ValueError):
@@ -57,20 +65,25 @@ def _save_webp(image: Image.Image, destination: Path, quality: int) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def _validate_image_header(opened: Image.Image) -> None:
-    if opened.format not in ALLOWED_FORMATS:
-        raise InvalidImage(translate("仅支持 JPEG、PNG 和 WebP 图片"))
+def _validate_image_dimensions(image: Image.Image) -> None:
     if (
-        opened.width > current_app.config["MAX_IMAGE_DIMENSION"]
-        or opened.height > current_app.config["MAX_IMAGE_DIMENSION"]
-        or opened.width * opened.height > current_app.config["MAX_IMAGE_PIXELS"]
+        image.width > current_app.config["MAX_IMAGE_DIMENSION"]
+        or image.height > current_app.config["MAX_IMAGE_DIMENSION"]
+        or image.width * image.height > current_app.config["MAX_IMAGE_PIXELS"]
     ):
         raise InvalidImage(translate("图片像素数量超过安全处理限制"))
+
+
+def _validate_image_header(opened: Image.Image) -> None:
+    if opened.format not in ALLOWED_FORMATS:
+        raise InvalidImage(translate("仅支持 JPEG、PNG、WebP 和 HEIF 图片"))
+    _validate_image_dimensions(opened)
 
 
 def _normalized_image(opened: Image.Image) -> Image.Image:
     image = ImageOps.exif_transpose(opened)
     image.load()
+    _validate_image_dimensions(image)
     if image.width < 32 or image.height < 32:
         raise InvalidImage(translate("图片尺寸过小"))
     if image.mode not in {"RGB", "RGBA"}:
@@ -95,7 +108,19 @@ def process_image(stream) -> dict:
                 _save_webp(image, original_path, 84)
                 image.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
                 _save_webp(image, thumb_path, 78)
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+    except InvalidImage:
+        original_path.unlink(missing_ok=True)
+        thumb_path.unlink(missing_ok=True)
+        raise
+    except (
+        UnidentifiedImageError,
+        OSError,
+        SyntaxError,
+        RuntimeError,
+        EOFError,
+        ValueError,
+        Image.DecompressionBombError,
+    ) as error:
         original_path.unlink(missing_ok=True)
         thumb_path.unlink(missing_ok=True)
         raise InvalidImage(translate("图片文件无效或无法安全处理")) from error
@@ -125,7 +150,18 @@ def process_site_image(stream, slot: str) -> dict:
                 width, height = image.size
                 image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
                 _save_webp(image, destination, 84)
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+    except InvalidImage:
+        destination.unlink(missing_ok=True)
+        raise
+    except (
+        UnidentifiedImageError,
+        OSError,
+        SyntaxError,
+        RuntimeError,
+        EOFError,
+        ValueError,
+        Image.DecompressionBombError,
+    ) as error:
         destination.unlink(missing_ok=True)
         raise InvalidImage(translate("图片文件无效或无法安全处理")) from error
     except Exception:

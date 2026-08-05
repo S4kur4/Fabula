@@ -100,10 +100,10 @@
           <section class="upload-zone" id="upload-zone" aria-labelledby="upload-title">
             <div>
               <h2 id="upload-title">{{ t("加入你的摄影集") }}</h2>
-              <p>{{ t("支持 JPEG、PNG 和 WebP。单张不超过应用配置的上传限制。") }}</p>
+              <p>{{ t("支持 JPEG、PNG、WebP 和 HEIF。单张不超过应用配置的上传限制。") }}</p>
             </div>
             <label class="paper-button file-button" for="photo-upload">{{ t("选择照片") }}</label>
-            <input id="photo-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+            <input id="photo-upload" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
             <label class="upload-target">
               <span>{{ t("上传到") }}</span>
               <select id="upload-album">
@@ -298,7 +298,7 @@
                       </div>
                       <div class="site-image-actions">
                         <label class="paper-button" for="site-home-image">{{ t("更换照片") }}</label>
-                        <input id="site-home-image" type="file" accept="image/jpeg,image/png,image/webp" data-site-image-input="home">
+                        <input id="site-home-image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" data-site-image-input="home">
                         <button class="text-action" type="button" data-site-image-reset="home" {{ "hidden" if not site_images.home.custom }}>{{ t("恢复默认") }}</button>
                       </div>
                     </article>
@@ -324,7 +324,7 @@
                       </div>
                       <div class="site-image-actions">
                         <label class="paper-button" for="site-login-image">{{ t("更换照片") }}</label>
-                        <input id="site-login-image" type="file" accept="image/jpeg,image/png,image/webp" data-site-image-input="login">
+                        <input id="site-login-image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" data-site-image-input="login">
                         <button class="text-action" type="button" data-site-image-reset="login" {{ "hidden" if not site_images.login.custom }}>{{ t("恢复默认") }}</button>
                       </div>
                     </article>

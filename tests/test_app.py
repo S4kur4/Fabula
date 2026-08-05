@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
+from pillow_heif import options as heif_options
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from fabula import create_app
@@ -115,6 +116,17 @@ class FabulaTestCase(unittest.TestCase):
     def image_stream(width=120, height=180):
         stream = BytesIO()
         Image.new("RGB", (width, height), "#806f62").save(stream, "JPEG")
+        stream.seek(0)
+        return stream
+
+    @staticmethod
+    def heif_stream(width=120, height=180):
+        stream = BytesIO()
+        Image.new("RGB", (width, height), "#806f62").save(
+            stream,
+            "HEIF",
+            quality=90,
+        )
         stream.seek(0)
         return stream
 
@@ -423,6 +435,49 @@ class FabulaTestCase(unittest.TestCase):
                 [(row["id"], row["album_position"]) for row in rows],
                 [(self.photo_one_id, 0), (uploaded_id, 1)],
             )
+
+    def test_heif_photo_upload_is_safely_reencoded_as_webp(self):
+        token = self.login("user.one", "user-password-2026")
+        response = self.api(
+            "POST",
+            "/studio/api/photos",
+            token,
+            data={"photo": (self.heif_stream(96, 144), "IMG_0317.HEIC")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        uploaded_id = response.get_json()["photo"]["id"]
+
+        with self.app.app_context():
+            row = get_db().execute(
+                """
+                SELECT storage_name, original_name, mime_type, width, height
+                FROM photos
+                WHERE id = ?
+                """,
+                (uploaded_id,),
+            ).fetchone()
+            self.assertEqual(row["original_name"], "IMG_0317.HEIC")
+            self.assertEqual(row["mime_type"], "image/webp")
+            self.assertEqual((row["width"], row["height"]), (96, 144))
+            original_path = self.data_root / "media" / "original" / row["storage_name"]
+            thumb_path = self.data_root / "media" / "thumbs" / row["storage_name"]
+            for stored_path in (original_path, thumb_path):
+                with Image.open(stored_path) as stored:
+                    self.assertEqual(stored.format, "WEBP")
+
+    def test_heif_decoder_uses_restricted_options(self):
+        self.assertEqual(heif_options.DECODE_THREADS, 1)
+        self.assertFalse(heif_options.THUMBNAILS)
+        self.assertFalse(heif_options.DEPTH_IMAGES)
+        self.assertFalse(heif_options.AUX_IMAGES)
+        self.assertFalse(heif_options.DISABLE_SECURITY_LIMITS)
+
+    def test_studio_advertises_heif_upload_support(self):
+        self.login("user.one", "user-password-2026")
+        html = self.client.get("/studio").get_data(as_text=True)
+        self.assertIn("支持 JPEG、PNG、WebP 和 HEIF", html)
+        self.assertIn("image/heic,image/heif,.heic,.heif", html)
 
     def test_database_also_rejects_cross_owner_album_relation(self):
         with self.app.app_context():

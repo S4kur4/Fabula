@@ -597,8 +597,14 @@
       }
       uploadPreviewUrl = URL.createObjectURL(files[index]);
       const preview = document.querySelector("#upload-preview");
+      preview.hidden = true;
+      preview.onload = () => {
+        preview.hidden = false;
+      };
+      preview.onerror = () => {
+        preview.hidden = true;
+      };
       preview.src = uploadPreviewUrl;
-      preview.hidden = false;
       statusText.textContent = t("正在处理 {current} / {total}: {name}", {
         current: index + 1,
         total: files.length,

@@ -2996,6 +2996,16 @@ img {
     margin-right: 0;
   }
 
+  #photo-dialog .photo-editor-actions .danger-button {
+    flex: 1 0 100%;
+  }
+
+  #photo-dialog .photo-editor-actions .paper-button,
+  #photo-dialog .photo-editor-actions .ink-button {
+    flex: 1 1 calc(50% - 5px);
+    min-width: 0;
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
