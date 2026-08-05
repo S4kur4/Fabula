@@ -64,7 +64,7 @@ FABULA_TRUST_PROXY_HEADERS=true
 
 新建账号和管理员重置账号时，临时密码由服务端随机生成，只显示一次，默认在 15 分钟后失效。可通过 `FABULA_TEMPORARY_PASSWORD_TTL_SECONDS` 调整为 60 至 86400 秒。升级后，历史上尚未完成首次改密且没有有效期记录的临时密码会被拒绝；管理员需要重新生成临时密码，初始管理员则可使用 `reset-admin-password` 命令恢复。
 
-图片上传支持 JPEG、PNG、WebP 以及 iPhone 常用的 HEIF/HEIC。所有输入都会经过格式识别、像素与尺寸检查，再重新编码为 WebP，不会直接保存用户上传的原始文件。HEIF 解码关闭缩略图、景深图和辅助图读取，并限制为单线程；图片处理整体默认限制为 1200 万像素、单边不超过 12000 像素，并在单个进程内串行处理，避免多个大图同时占用内存。可以通过 `FABULA_MAX_IMAGE_PIXELS` 和 `FABULA_MAX_IMAGE_DIMENSION` 进一步降低限制，但不能提高到内置安全上限以上。Compose 同时限制容器为 512 MiB 内存和 128 个进程。
+图片上传支持 JPEG、PNG、WebP 以及 iPhone 常用的 HEIF/HEIC。所有输入都会经过格式识别、像素与尺寸检查，再重新编码为 WebP，不会直接保存用户上传的原始文件。HEIF 解码关闭缩略图、景深图和辅助图读取，并限制为单线程；高像素 JPEG 会在完整解码前由解码器降采样。图片处理默认允许不超过 5000 万像素、单边不超过 12000 像素的源图片，输出长边不超过 2400 像素，并在单个进程内串行处理。可以通过 `FABULA_MAX_IMAGE_PIXELS` 和 `FABULA_MAX_IMAGE_DIMENSION` 进一步降低限制，但不能提高到内置安全上限以上。Compose 同时限制容器为 512 MiB 内存和 128 个进程。
 
 ### Cloudflare Turnstile
 

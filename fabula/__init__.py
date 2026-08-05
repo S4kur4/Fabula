@@ -11,7 +11,7 @@ from werkzeug.security import generate_password_hash
 
 from . import admin, auth, cli, db, i18n, public, security, studio
 from .i18n import translate
-from .media import drain_media_deletions
+from .media import HARD_MAX_IMAGE_PIXELS, drain_media_deletions
 from .settings import get_site_copy, get_site_images
 
 
@@ -91,7 +91,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             os.environ.get("FABULA_TEMPORARY_PASSWORD_TTL_SECONDS", "900")
         ),
         MAX_IMAGE_PIXELS=int(
-            os.environ.get("FABULA_MAX_IMAGE_PIXELS", "12000000")
+            os.environ.get("FABULA_MAX_IMAGE_PIXELS", str(HARD_MAX_IMAGE_PIXELS))
         ),
         MAX_IMAGE_DIMENSION=int(
             os.environ.get("FABULA_MAX_IMAGE_DIMENSION", "12000")
@@ -151,7 +151,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.config["MAX_IMAGE_PIXELS"],
             "FABULA_MAX_IMAGE_PIXELS",
             1_024,
-            12_000_000,
+            HARD_MAX_IMAGE_PIXELS,
         ),
         MAX_IMAGE_DIMENSION=_bounded_integer(
             app.config["MAX_IMAGE_DIMENSION"],

@@ -1105,6 +1105,41 @@ class FabulaTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["message"], "图片像素数量超过安全处理限制")
 
+    def test_iphone_resolution_jpeg_is_downsampled_and_stored(self):
+        token = self.login("user.one", "user-password-2026")
+        response = self.api(
+            "POST",
+            "/studio/api/photos",
+            token,
+            data={"photo": (self.image_stream(5712, 4284), "IMG_0797.jpeg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        uploaded_id = response.get_json()["photo"]["id"]
+
+        with self.app.app_context():
+            row = get_db().execute(
+                "SELECT storage_name, width, height FROM photos WHERE id = ?",
+                (uploaded_id,),
+            ).fetchone()
+            stored_path = self.data_root / "media" / "original" / row["storage_name"]
+            with Image.open(stored_path) as stored:
+                self.assertLessEqual(max(stored.size), 2400)
+                self.assertEqual(stored.size, (row["width"], row["height"]))
+
+    def test_pillow_bomb_error_uses_pixel_limit_message(self):
+        token = self.login("user.one", "user-password-2026")
+        with patch.object(Image, "MAX_IMAGE_PIXELS", 10_000):
+            response = self.api(
+                "POST",
+                "/studio/api/photos",
+                token,
+                data={"photo": (self.image_stream(201, 101), "too-large.jpg")},
+                content_type="multipart/form-data",
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["message"], "图片像素数量超过安全处理限制")
+
     def test_image_variants_are_bounded_before_encoding(self):
         self.app.config["MAX_IMAGE_PIXELS"] = 4_000_000
         encoded_sizes = []
@@ -1666,7 +1701,7 @@ class ApplicationConfigurationTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             data_root = Path(directory)
             config = self.app_config(data_root)
-            config["MAX_IMAGE_PIXELS"] = 12_000_001
+            config["MAX_IMAGE_PIXELS"] = 50_000_001
             with self.assertRaisesRegex(RuntimeError, "FABULA_MAX_IMAGE_PIXELS"):
                 create_app(config)
 

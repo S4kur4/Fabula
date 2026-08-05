@@ -19,7 +19,8 @@ STORAGE_PATTERN = re.compile(r"^[a-f0-9]{32}\.webp$")
 SITE_STORAGE_PATTERN = re.compile(r"^(home|login)-[a-f0-9]{32}\.webp$")
 SITE_IMAGE_SLOTS = frozenset({"home", "login"})
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP", "HEIF"}
-HARD_MAX_IMAGE_PIXELS = 12_000_000
+HARD_MAX_IMAGE_PIXELS = 50_000_000
+ORIGINAL_MAX_SIZE = (2400, 2400)
 Image.MAX_IMAGE_PIXELS = HARD_MAX_IMAGE_PIXELS
 IMAGE_PROCESSING_LOCK = threading.Lock()
 
@@ -81,11 +82,14 @@ def _validate_image_header(opened: Image.Image) -> None:
 
 
 def _normalized_image(opened: Image.Image) -> Image.Image:
-    image = ImageOps.exif_transpose(opened)
-    image.load()
+    if opened.format == "JPEG":
+        opened.draft("RGB", ORIGINAL_MAX_SIZE)
+    ImageOps.exif_transpose(opened, in_place=True)
+    image = opened
     _validate_image_dimensions(image)
     if image.width < 32 or image.height < 32:
         raise InvalidImage(translate("图片尺寸过小"))
+    image.thumbnail(ORIGINAL_MAX_SIZE, Image.Resampling.LANCZOS)
     if image.mode not in {"RGB", "RGBA"}:
         image = image.convert("RGB")
     if image.mode == "RGBA":
@@ -95,16 +99,30 @@ def _normalized_image(opened: Image.Image) -> Image.Image:
     return image
 
 
+def _log_decode_failure(error: Exception, source_description: str) -> None:
+    detail = " ".join(str(error).split())[:240]
+    current_app.logger.warning(
+        "Image processing rejected (%s; %s): %s",
+        source_description,
+        type(error).__name__,
+        detail,
+    )
+
+
 def process_image(stream) -> dict:
     storage_name = f"{uuid.uuid4().hex}.webp"
     original_path, thumb_path = _paths(storage_name)
+    source_description = "format=unknown dimensions=unknown"
     try:
         with IMAGE_PROCESSING_LOCK:
             with Image.open(stream) as opened:
+                source_description = (
+                    f"format={opened.format or 'unknown'} "
+                    f"dimensions={opened.width}x{opened.height}"
+                )
                 _validate_image_header(opened)
                 image = _normalized_image(opened)
                 width, height = image.size
-                image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
                 _save_webp(image, original_path, 84)
                 image.thumbnail((1000, 1000), Image.Resampling.LANCZOS)
                 _save_webp(image, thumb_path, 78)
@@ -112,6 +130,11 @@ def process_image(stream) -> dict:
         original_path.unlink(missing_ok=True)
         thumb_path.unlink(missing_ok=True)
         raise
+    except Image.DecompressionBombError as error:
+        original_path.unlink(missing_ok=True)
+        thumb_path.unlink(missing_ok=True)
+        _log_decode_failure(error, source_description)
+        raise InvalidImage(translate("图片像素数量超过安全处理限制")) from error
     except (
         UnidentifiedImageError,
         OSError,
@@ -119,10 +142,10 @@ def process_image(stream) -> dict:
         RuntimeError,
         EOFError,
         ValueError,
-        Image.DecompressionBombError,
     ) as error:
         original_path.unlink(missing_ok=True)
         thumb_path.unlink(missing_ok=True)
+        _log_decode_failure(error, source_description)
         raise InvalidImage(translate("图片文件无效或无法安全处理")) from error
     except Exception:
         original_path.unlink(missing_ok=True)
@@ -142,17 +165,25 @@ def process_site_image(stream, slot: str) -> dict:
         raise InvalidImage(translate("站点图片位置无效"))
     storage_name = f"{slot}-{uuid.uuid4().hex}.webp"
     destination = Path(current_app.config["SITE_MEDIA_ROOT"]) / storage_name
+    source_description = "format=unknown dimensions=unknown"
     try:
         with IMAGE_PROCESSING_LOCK:
             with Image.open(stream) as opened:
+                source_description = (
+                    f"format={opened.format or 'unknown'} "
+                    f"dimensions={opened.width}x{opened.height}"
+                )
                 _validate_image_header(opened)
                 image = _normalized_image(opened)
                 width, height = image.size
-                image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
                 _save_webp(image, destination, 84)
     except InvalidImage:
         destination.unlink(missing_ok=True)
         raise
+    except Image.DecompressionBombError as error:
+        destination.unlink(missing_ok=True)
+        _log_decode_failure(error, source_description)
+        raise InvalidImage(translate("图片像素数量超过安全处理限制")) from error
     except (
         UnidentifiedImageError,
         OSError,
@@ -160,9 +191,9 @@ def process_site_image(stream, slot: str) -> dict:
         RuntimeError,
         EOFError,
         ValueError,
-        Image.DecompressionBombError,
     ) as error:
         destination.unlink(missing_ok=True)
+        _log_decode_failure(error, source_description)
         raise InvalidImage(translate("图片文件无效或无法安全处理")) from error
     except Exception:
         destination.unlink(missing_ok=True)
