@@ -624,6 +624,17 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn('data-album-status="draft"', html)
         self.assertNotIn('class="status-text"', html)
         self.assertNotIn('class="manage-photo is-published"', html)
+        self.assertIn('class="dialog photo-editor-dialog"', html)
+        self.assertIn('class="modal-form photo-editor-form"', html)
+        self.assertIn('class="photo-editor-scroll"', html)
+        self.assertIn('class="modal-actions photo-editor-actions"', html)
+
+        css_response = self.client.get("/static/css/app.css")
+        css = css_response.get_data(as_text=True)
+        css_response.close()
+        self.assertIn(".photo-editor-scroll {", css)
+        self.assertIn("overscroll-behavior: contain;", css)
+        self.assertIn("max(14px, env(safe-area-inset-bottom))", css)
 
     def test_language_switch_is_saved_and_keeps_custom_content_unchanged(self):
         token = self.login("user.one", "user-password-2026")

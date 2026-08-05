@@ -2275,7 +2275,10 @@ img {
 }
 
 .dialog {
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .dialog.is-narrow {
@@ -2285,6 +2288,38 @@ img {
 .modal-form {
   position: relative;
   padding: clamp(30px, 5vw, 58px);
+}
+
+.photo-editor-dialog {
+  overflow: hidden;
+}
+
+.photo-editor-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  max-height: calc(100vh - 34px);
+  max-height: calc(100dvh - 34px);
+  padding: 0;
+}
+
+.photo-editor-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(30px, 5vw, 58px);
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.photo-editor-actions {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  margin-top: 0;
+  border-top: 1px solid var(--line);
+  padding: 16px clamp(30px, 5vw, 58px) max(16px, env(safe-area-inset-bottom));
+  background: var(--paper-raised);
+  box-shadow: 0 -14px 28px color-mix(in srgb, var(--paper-raised) 88%, transparent);
 }
 
 .modal-form h2 {
@@ -2918,6 +2953,34 @@ img {
   .modal-form {
     min-height: 100dvh;
     padding: 58px 20px 24px;
+  }
+
+  .photo-editor-form {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100vh;
+    max-height: 100dvh;
+    padding: 0;
+  }
+
+  .photo-editor-scroll {
+    padding: 58px 20px 28px;
+    scrollbar-gutter: auto;
+  }
+
+  .photo-dialog-preview {
+    max-height: min(32dvh, 260px);
+    margin-bottom: 26px;
+  }
+
+  .photo-dialog-preview img {
+    height: min(32dvh, 260px);
+  }
+
+  .photo-editor-actions {
+    padding: 14px 20px max(14px, env(safe-area-inset-bottom));
   }
 
   .modal-form h2 {

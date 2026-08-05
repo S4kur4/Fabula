@@ -459,20 +459,22 @@
     </form>
   </dialog>
 
-  <dialog class="dialog" id="photo-dialog">
-    <form class="modal-form" id="photo-form">
+  <dialog class="dialog photo-editor-dialog" id="photo-dialog">
+    <form class="modal-form photo-editor-form" id="photo-form">
       <button class="dialog-close" type="button" data-close-dialog="photo-dialog" aria-label="{{ t('关闭') }}">×</button>
-      <h2>{{ t("编辑照片故事") }}</h2>
-      <input id="editing-photo-id" type="hidden">
-      <div class="photo-dialog-preview"><img id="photo-dialog-image" alt=""></div>
-      <div class="form-field"><label for="photo-title">{{ t("照片标题") }}</label><input id="photo-title" maxlength="80"></div>
-      <div class="form-field"><label for="photo-story">{{ t("故事背景") }}</label><textarea id="photo-story" maxlength="1200"></textarea></div>
-      <div class="form-field">
-        <label for="photo-album">{{ t("所属摄影集") }}</label>
-        <select id="photo-album"><option value="">{{ t("未分类") }}</option>{% for album in albums %}<option value="{{ album.id }}" {{ "disabled" if album.status == "published" }}>{{ album.name }}{{ t("（已发布）") if album.status == "published" }}</option>{% endfor %}</select>
+      <div class="photo-editor-scroll">
+        <h2>{{ t("编辑照片故事") }}</h2>
+        <input id="editing-photo-id" type="hidden">
+        <div class="photo-dialog-preview"><img id="photo-dialog-image" alt=""></div>
+        <div class="form-field"><label for="photo-title">{{ t("照片标题") }}</label><input id="photo-title" maxlength="80"></div>
+        <div class="form-field"><label for="photo-story">{{ t("故事背景") }}</label><textarea id="photo-story" maxlength="1200"></textarea></div>
+        <div class="form-field">
+          <label for="photo-album">{{ t("所属摄影集") }}</label>
+          <select id="photo-album"><option value="">{{ t("未分类") }}</option>{% for album in albums %}<option value="{{ album.id }}" {{ "disabled" if album.status == "published" }}>{{ album.name }}{{ t("（已发布）") if album.status == "published" }}</option>{% endfor %}</select>
+        </div>
+        <p class="form-error" id="photo-error" role="alert"></p>
       </div>
-      <p class="form-error" id="photo-error" role="alert"></p>
-      <div class="modal-actions">
+      <div class="modal-actions photo-editor-actions">
         <button class="danger-button" type="button" data-delete-current-photo>{{ t("删除照片") }}</button>
         <button class="paper-button" type="button" data-close-dialog="photo-dialog">{{ t("取消") }}</button>
         <button class="ink-button" type="submit">{{ t("保存修改") }}</button>
