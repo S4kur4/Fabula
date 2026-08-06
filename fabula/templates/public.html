@@ -55,17 +55,17 @@
           <p>{{ site_copy.archive_intro }}</p>
         </header>
 
-        <div class="collection-filter reveal" id="collection-filter" aria-label="{{ t('摄影集筛选') }}">
-          <button class="filter-button is-active" type="button" data-album-filter="" aria-pressed="true">
-            <span>{{ t("全部作品") }}</span>
-            <small>{{ t("{count} 张照片", count=total_photos) }}</small>
-          </button>
+        <div class="collection-filter reveal" id="collection-filter" aria-label="{{ t('摄影集筛选') }}" data-collection-cycle-ms="30000">
           {% for album in albums %}
-            <button class="filter-button" type="button" data-album-filter="{{ album.id }}" aria-pressed="false">
+            <button class="filter-button {{ 'is-active' if loop.first }}" type="button" data-album-filter="{{ album.id }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">
               <span>{{ album.name }}</span>
               <small>{{ t("{photographer} / {count} 张照片", photographer=album.photographer, count=album.photo_count) }}</small>
             </button>
           {% endfor %}
+          <button class="filter-button {{ 'is-active' if not albums }}" type="button" data-album-filter="" aria-pressed="{{ 'true' if not albums else 'false' }}">
+            <span>{{ t("全部照片") }}</span>
+            <small>{{ t("{count} 张照片", count=total_photos) }}</small>
+          </button>
         </div>
 
         <div class="gallery-grid" id="gallery-grid" aria-live="polite">
@@ -101,7 +101,7 @@
             </div>
           {% endfor %}
         </div>
-        <div class="gallery-sentinel" id="gallery-sentinel" data-next-offset="{{ photos|length if photos|length < total_photos else '' }}"></div>
+        <div class="gallery-sentinel" id="gallery-sentinel" data-next-offset="{{ photos|length if photos|length < initial_photo_total else '' }}"></div>
         <div class="load-error" id="gallery-error" hidden>
           <p>{{ t("作品暂时无法继续加载。") }}</p>
           <button class="paper-button" type="button" data-gallery-retry>{{ t("重试") }}</button>

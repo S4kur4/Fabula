@@ -4,6 +4,9 @@
   const galleryGrid = document.querySelector("#gallery-grid");
   const sentinel = document.querySelector("#gallery-sentinel");
   const galleryError = document.querySelector("#gallery-error");
+  const collectionFilter = document.querySelector("#collection-filter");
+  const filterButtons = [...document.querySelectorAll("[data-album-filter]")];
+  const collectionAlbums = filterButtons.filter((button) => button.dataset.albumFilter);
   const lightbox = document.querySelector("#lightbox");
   const lightboxImage = document.querySelector("#lightbox-image");
   const lightboxTitle = document.querySelector("#lightbox-title");
@@ -11,9 +14,16 @@
   const lightboxMeta = document.querySelector("#lightbox-meta");
   const lightboxThumbs = document.querySelector("#lightbox-thumbs");
   const t = window.Fabula.t;
-  let activeAlbum = "";
+  const configuredCycleMs = Number(collectionFilter?.dataset.collectionCycleMs);
+  const collectionCycleMs = Number.isFinite(configuredCycleMs) && configuredCycleMs > 0
+    ? configuredCycleMs
+    : 30000;
+  let activeAlbum = document.querySelector("[data-album-filter].is-active")?.dataset.albumFilter || "";
   let nextOffset = sentinel?.dataset.nextOffset || "";
   let loading = false;
+  let pendingGalleryReset = false;
+  let collectionCycleTimer = 0;
+  let collectionCycleStopped = false;
   let lightboxIndex = 0;
   let slideshowTimer = 0;
   let photoModels = [];
@@ -246,11 +256,18 @@
   }
 
   async function loadPhotos(reset = false) {
-    if (loading || (!reset && nextOffset === "")) {
+    if (loading) {
+      if (reset) {
+        pendingGalleryReset = true;
+      }
+      return;
+    }
+    if (!reset && nextOffset === "") {
       return;
     }
     loading = true;
     galleryError.hidden = true;
+    const requestedAlbum = activeAlbum;
     const offset = reset ? 0 : Number(nextOffset);
     const query = new URLSearchParams({ limit: "24", offset: String(offset) });
     if (activeAlbum) {
@@ -258,6 +275,9 @@
     }
     try {
       const payload = await window.Fabula.api(`/api/public/photos?${query}`);
+      if (requestedAlbum !== activeAlbum) {
+        return;
+      }
       if (reset) {
         galleryGrid.replaceChildren();
         photoModels = [];
@@ -281,26 +301,73 @@
       }
       observeReveals(galleryGrid);
     } catch (error) {
-      galleryError.hidden = false;
-      window.Fabula.showToast(error.message, "error");
+      if (requestedAlbum === activeAlbum) {
+        galleryError.hidden = false;
+        window.Fabula.showToast(error.message, "error");
+      }
     } finally {
       loading = false;
+      if (pendingGalleryReset) {
+        pendingGalleryReset = false;
+        loadPhotos(true);
+      }
     }
   }
 
-  document.querySelectorAll("[data-album-filter]").forEach((button) => {
-    button.addEventListener("click", () => {
-      activeAlbum = button.dataset.albumFilter;
-      document.querySelectorAll("[data-album-filter]").forEach((item) => {
-        const active = item === button;
-        item.classList.toggle("is-active", active);
-        item.setAttribute("aria-pressed", String(active));
-      });
+  function selectAlbum(button, scrollIntoView = false) {
+    const nextAlbum = button.dataset.albumFilter;
+    const changed = nextAlbum !== activeAlbum;
+    activeAlbum = nextAlbum;
+    filterButtons.forEach((item) => {
+      const active = item === button;
+      item.classList.toggle("is-active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
+    if (changed) {
       nextOffset = "0";
       loadPhotos(true);
+    }
+    if (scrollIntoView) {
       document.querySelector("#archive")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function stopCollectionCycle() {
+    collectionCycleStopped = true;
+    window.clearTimeout(collectionCycleTimer);
+    collectionCycleTimer = 0;
+    filterButtons.forEach((button) => button.classList.remove("is-rotating"));
+  }
+
+  function scheduleCollectionCycle(button) {
+    window.clearTimeout(collectionCycleTimer);
+    filterButtons.forEach((item) => item.classList.remove("is-rotating"));
+    if (collectionCycleStopped || !button || !collectionAlbums.length) {
+      return;
+    }
+    button.style.setProperty("--collection-cycle-duration", `${collectionCycleMs}ms`);
+    void button.offsetWidth;
+    button.classList.add("is-rotating");
+    collectionCycleTimer = window.setTimeout(() => {
+      const currentIndex = collectionAlbums.indexOf(button);
+      const nextButton = collectionAlbums[(currentIndex + 1) % collectionAlbums.length];
+      selectAlbum(nextButton);
+      scheduleCollectionCycle(nextButton);
+    }, collectionCycleMs);
+  }
+
+  filterButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      stopCollectionCycle();
+      selectAlbum(button, true);
     });
   });
+
+  const initialCollection = collectionAlbums.find((button) => button.classList.contains("is-active"));
+  const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (initialCollection && !prefersReducedMotion) {
+    scheduleCollectionCycle(initialCollection);
+  }
 
   document.querySelector("[data-gallery-retry]")?.addEventListener("click", () => loadPhotos(false));
 

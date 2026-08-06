@@ -162,7 +162,10 @@ def structured_item(value: object) -> dict:
 
 @bp.get("/")
 def index():
-    photos = public_photos(album_id=None, limit=24, offset=0)
+    albums = public_albums()
+    initial_album_id = albums[0]["id"] if albums else None
+    initial_photo_total = albums[0]["photo_count"] if albums else 0
+    photos = public_photos(album_id=initial_album_id, limit=24, offset=0)
     total = get_db().execute(
         """
         SELECT COUNT(*)
@@ -176,7 +179,8 @@ def index():
         site_copy=get_site_copy(),
         photos=photos,
         total_photos=total,
-        albums=public_albums(),
+        initial_photo_total=initial_photo_total,
+        albums=albums,
         profiles=public_profiles(),
         current_year=date.today().year,
     )

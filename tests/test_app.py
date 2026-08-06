@@ -197,6 +197,47 @@ class FabulaTestCase(unittest.TestCase):
         self.assertIn("上传作品后，它们会出现在这里。", html)
         self.assertNotIn("摄影师发布作品后，它们会出现在这里。", html)
 
+    def test_public_album_cycle_starts_with_first_album_and_keeps_all_photos_last(self):
+        with self.app.app_context():
+            get_db().execute(
+                """
+                UPDATE albums
+                SET status = 'published', published_at = CURRENT_TIMESTAMP
+                WHERE id IN (?, ?)
+                """,
+                (self.album_one_id, self.album_two_id),
+            )
+            get_db().commit()
+
+        html = self.client.get("/").get_data(as_text=True)
+        first_filter = f'data-album-filter="{self.album_one_id}"'
+        second_filter = f'data-album-filter="{self.album_two_id}"'
+        all_filter = 'data-album-filter=""'
+        self.assertLess(html.index(first_filter), html.index(second_filter))
+        self.assertLess(html.index(second_filter), html.index(all_filter))
+        self.assertIn(
+            f'class="filter-button is-active" type="button" {first_filter} aria-pressed="true"',
+            html,
+        )
+        self.assertIn('data-collection-cycle-ms="30000"', html)
+        self.assertIn("全部照片", html)
+        self.assertNotIn("全部作品", html)
+        self.assertIn("所有者的照片", html)
+        self.assertNotIn("他人的照片", html)
+
+        public_js_response = self.client.get("/static/js/public.js")
+        public_js = public_js_response.get_data(as_text=True)
+        public_js_response.close()
+        self.assertIn("function stopCollectionCycle()", public_js)
+        self.assertIn("scheduleCollectionCycle(initialCollection)", public_js)
+        self.assertIn("const collectionAlbums = filterButtons.filter", public_js)
+
+        public_css_response = self.client.get("/static/css/app.css")
+        public_css = public_css_response.get_data(as_text=True)
+        public_css_response.close()
+        self.assertIn(".filter-button.is-rotating::after", public_css)
+        self.assertIn("animation: collection-progress", public_css)
+
     def test_album_publication_controls_public_feed_and_media_access(self):
         storage_name = "a" * 32 + ".webp"
         original = self.data_root / "media" / "original" / storage_name
